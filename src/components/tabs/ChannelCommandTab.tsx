@@ -882,8 +882,17 @@ export const ChannelCommandTab: React.FC<ChannelCommandTabProps> = ({
         </div>
 
         {/* Posts Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-          {filteredPosts.map((post) => {
+        {filteredPosts.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50 rounded-sm border border-dashed border-slate-300">
+            <Radio className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <h4 className="text-xs font-bold text-slate-700">هیچ پستی در صف انتشار یا آرشیو کانال‌ها نیست</h4>
+            <p className="text-[11px] text-slate-500 mt-1">
+              با استفاده از فرم بالا یا انتخاب «قالب‌های آماده»، می‌توانید پست جدیدی تدوین کرده و همزمان به تلگرام و بله مخابره فرمایید.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {filteredPosts.map((post) => {
             const isPublished = post.status === 'published';
             return (
               <div 
@@ -1000,6 +1009,7 @@ export const ChannelCommandTab: React.FC<ChannelCommandTabProps> = ({
             );
           })}
         </div>
+      )}
 
       </div>
 

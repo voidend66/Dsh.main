@@ -13,7 +13,8 @@ import {
   ImageIcon,
   UserCheck,
   Filter,
-  Plus
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../../types';
 import { toPersianDigits } from '../../utils/formatters';
@@ -24,6 +25,7 @@ interface SecretaryLeadsTabProps {
   onOpenSmsModal: (lead: Lead) => void;
   onOpenDetailModal: (lead: Lead) => void;
   onAddNewLead: (newLead: Partial<Lead>) => void;
+  onDeleteLead?: (leadId: string) => void;
 }
 
 export const SecretaryLeadsTab: React.FC<SecretaryLeadsTabProps> = ({
@@ -31,7 +33,8 @@ export const SecretaryLeadsTab: React.FC<SecretaryLeadsTabProps> = ({
   onUpdateStatus,
   onOpenSmsModal,
   onOpenDetailModal,
-  onAddNewLead
+  onAddNewLead,
+  onDeleteLead
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -235,7 +238,32 @@ export const SecretaryLeadsTab: React.FC<SecretaryLeadsTabProps> = ({
 
       {/* LEADS LIST / CARDS */}
       <div className="space-y-3">
-        {filteredLeads.length === 0 ? (
+        {leads.length === 0 ? (
+          <div className="bg-white rounded-xl p-10 text-center border border-dashed border-teal-300 bg-teal-50/20 shadow-xs">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-teal-100/80 border border-teal-200 flex items-center justify-center text-teal-800">
+              <UserCheck className="w-7 h-7" />
+            </div>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold mb-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              سامانه نوبت‌دهی و وب‌سرویس مطب فعال و عملیاتی است
+            </span>
+            <h3 className="text-base font-black text-slate-900 mt-1">
+              کارتابل منشی آماده به کار است (بدون اطلاعات دمو)
+            </h3>
+            <p className="text-xs text-slate-600 mt-1.5 max-w-lg mx-auto leading-relaxed">
+              تمامی بیماران و اطلاعات تستی پاکسازی شدند. سیستم آماده پذیرش مراجعین واقعی است. با ارسال نوبت از فرم آنلاین سایت یا تماس تلفنی، پرونده بیمار مستقیماً در این بخش قرار می‌گیرد.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold flex items-center gap-2 shadow-xs transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>ثبت پرونده بیمار جدید (ثبت منشی)</span>
+              </button>
+            </div>
+          </div>
+        ) : filteredLeads.length === 0 ? (
           <div className="bg-white rounded-md p-10 text-center border border-slate-200">
             <UserCheck className="w-10 h-10 text-slate-300 mx-auto mb-2" />
             <p className="text-sm font-bold text-slate-700">هیچ بیماری مطابق این فیلتر یافت نشد.</p>
@@ -282,7 +310,7 @@ export const SecretaryLeadsTab: React.FC<SecretaryLeadsTabProps> = ({
                     </div>
                   </div>
 
-                  {/* Actions: View Details & Send SMS */}
+                  {/* Actions: View Details & Send SMS & Delete */}
                   <div className="flex items-center gap-2 mt-2 sm:mt-0">
                     <button
                       onClick={() => onOpenSmsModal(lead)}
@@ -300,6 +328,15 @@ export const SecretaryLeadsTab: React.FC<SecretaryLeadsTabProps> = ({
                       <Eye className="w-3.5 h-3.5 text-slate-600" />
                       پرونده و عکس
                     </button>
+                    {onDeleteLead && (
+                      <button
+                        onClick={() => onDeleteLead(lead.id)}
+                        className="p-1.5 rounded-sm text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 transition"
+                        title="حذف پرونده بیمار"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 

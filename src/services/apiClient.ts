@@ -7,7 +7,8 @@ import {
   ClinicService,
   GalleryItem,
   ReviewItem,
-  FaqItem
+  FaqItem,
+  Lead
 } from '../types';
 
 // ==========================================
@@ -307,3 +308,27 @@ export async function createFaqApi(faq: Partial<FaqItem>): Promise<FaqItem> {
   const res = await siteApi.post('/faqs', faq);
   return res.data?.data;
 }
+
+// ==========================================
+// 8. LEADS & PATIENTS (پرونده مراجعین و بیماران)
+// ==========================================
+export async function getLeadsApi(): Promise<Lead[]> {
+  const res = await siteApi.get('/leads');
+  return res.data?.data || [];
+}
+
+export async function createLeadApi(lead: Partial<Lead>): Promise<Lead> {
+  const res = await siteApi.post('/leads', lead);
+  return res.data?.data;
+}
+
+export async function updateLeadApi(id: string, updates: Partial<Lead>): Promise<Lead> {
+  const res = await siteApi.patch(`/leads/${id}`, updates);
+  return res.data?.data;
+}
+
+export async function deleteLeadApi(id: string): Promise<boolean> {
+  const res = await siteApi.delete(`/leads/${id}`);
+  return res.status === 200 || res.status === 204;
+}
+

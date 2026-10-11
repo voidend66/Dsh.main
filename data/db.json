@@ -6,7 +6,11 @@
     "medicalLicense": "بورد تخصصی ن.پ: ۸۴۲۱۰",
     "bio": "دکتر اکبر شهیدی پیام، جراح برجسته فک و صورت با بیش از ۱۸ سال سابقه درخشان در جراحی‌های ارتوگناتیک، بازسازی اسکلتی صورت و کاشت ایمپلنت‌های پیشرفته با تکنیک‌های کم‌تهاجمی و دیجیتال در کلینیک پاسداران تهران.",
     "portraitUrl": "https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=800&q=80",
-    "phoneNumbers": ["۰۲۱-۲۲۸۸۹۹۰۰", "۰۲۱-۲۲۸۸۹۹۱۱", "۰۹۱۲۳۴۵۶۷۸۹"],
+    "phoneNumbers": [
+      "۰۲۱-۲۲۸۸۹۹۰۰",
+      "۰۲۱-۲۲۸۸۹۹۱۱",
+      "۰۹۱۲۳۴۵۶۷۸۹"
+    ],
     "clinicAddress": "تهران، خیابان پاسداران، نبش بوستان پنجم، ساختمان پزشکان پاسداران، طبقه ۳، واحد ۱۲",
     "instagramHandle": "@drshahidi_jawsurgery",
     "instagramUrl": "https://instagram.com/drshahidi_jawsurgery",
@@ -34,7 +38,7 @@
       "seoScore": 94,
       "targetKeyword": "جراحی فک و صورت تهران",
       "readTimeMin": 8,
-      "views": 3410,
+      "views": 0,
       "excerpt": "بررسی جامع مراحل قبل و بعد از عمل فک، سن مناسب، نحوه اصلاح ناقرینگی و رژیم غذایی بعد از عمل.",
       "author": "دکتر اکبر شهیدی پیام",
       "featuredImage": "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=800&q=80"
@@ -49,7 +53,7 @@
       "seoScore": 89,
       "targetKeyword": "ایمپلنت دیجیتال فوری",
       "readTimeMin": 6,
-      "views": 2890,
+      "views": 0,
       "excerpt": "مقایسه روش بدون جراحی و بخیه (Flapless) با ایمپلنت سنتی و بررسی طول عمر پایه‌های تیتانیومی.",
       "author": "دکتر اکبر شهیدی پیام",
       "featuredImage": "https://images.unsplash.com/photo-1579684385127-1ef15d508118?auto=format&fit=crop&w=800&q=80"
@@ -64,7 +68,7 @@
       "seoScore": 91,
       "targetKeyword": "جراحی دندان عقل نهفته",
       "readTimeMin": 5,
-      "views": 420,
+      "views": 0,
       "excerpt": "نکات حیاتی درباره محافظت از عصب فک تحتانی با برش اولتراسونیک پیزوسرجری هنگام خروج دندان عقل.",
       "author": "دکتر اکبر شهیدی پیام",
       "featuredImage": "https://images.unsplash.com/photo-1598256989800-fe5f95da9787?auto=format&fit=crop&w=800&q=80"
@@ -79,53 +83,14 @@
       "seoScore": 78,
       "targetKeyword": "بوتاکس فک دندان قروچه",
       "readTimeMin": 4,
-      "views": 150,
+      "views": 0,
       "excerpt": "آرام‌سازی عضلات ماستر فک با دوز استاندارد درمانی بدون تغییر فرم تکلم یا جویدن.",
       "author": "دکتر اکبر شهیدی پیام",
       "featuredImage": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80"
     }
   ],
-  "appointments": [
-    {
-      "id": "app-1",
-      "patientName": "نگین حیدری",
-      "phone": "09124445566",
-      "service": "مشاوره جراحی فک و تقارن صورت",
-      "requestedDate": "دوشنبه ۲۶ شهریور",
-      "timeSlot": "۱۷:۳۰",
-      "status": "confirmed",
-      "bookedAt": "۲ ساعت پیش",
-      "source": "سایت اصلی (فرم آنلاین)",
-      "notes": "بیمار عکس رادیوگرافی CBCT دارد، جلسه اول مشاوره رایگان.",
-      "trackingCode": "SH-7821"
-    },
-    {
-      "id": "app-2",
-      "patientName": "آرش کیانی",
-      "phone": "09337778899",
-      "service": "اسکن سه‌بعدی و ایمپلنت دیجیتال",
-      "requestedDate": "سه‌شنبه ۲۷ شهریور",
-      "timeSlot": "۱۸:۱۵",
-      "status": "confirmed",
-      "bookedAt": "امروز ۱۰:۱۵",
-      "source": "لندینگ پیج گوگل ادز",
-      "notes": "نیاز به کاشت ۲ واحد فک بالا بدون جراحی وسیع.",
-      "trackingCode": "SH-7822"
-    },
-    {
-      "id": "app-3",
-      "patientName": "سپیده معتمدی",
-      "phone": "09192223344",
-      "service": "ویزیت جراحی دندان عقل نهفته",
-      "requestedDate": "چهارشنبه ۲۸ شهریور",
-      "timeSlot": "۱۹:۰۰",
-      "status": "pending",
-      "bookedAt": "امروز ۱۲:۴۰",
-      "source": "سایت اصلی",
-      "notes": "دندان عقل افقی مجاور عصب تحتانی - نیازمند ویزیت حضوری دکتر.",
-      "trackingCode": "SH-7823"
-    }
-  ],
+  "appointments": [],
+  "leads": [],
   "services": [
     {
       "id": "srv-1",
@@ -173,57 +138,8 @@
       "featured": false
     }
   ],
-  "gallery": [
-    {
-      "id": "gal-1",
-      "title": "اصلاح عقب‌ماندگی فک پایین و اپن‌بایت (کلاس ۲ اسکلتی)",
-      "category": "جراحی ارتوگناتیک",
-      "beforeImageUrl": "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=600&q=80",
-      "afterImageUrl": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=600&q=80",
-      "patientAgeGender": "خانم ۲۶ ساله",
-      "procedureDuration": "۲.۵ ساعت عمل ارتوگناتیک دو فک",
-      "description": "بهبود کامل تقارن و زاویه خط فک، حل مشکل جویدن و بازگشت زاویه ایده‌آل نیم‌رخ صورت."
-    },
-    {
-      "id": "gal-2",
-      "title": "بازسازی تمام‌فک با ایمپلنت دیجیتال اشترومن",
-      "category": "ایمپلنت دیجیتال",
-      "beforeImageUrl": "https://images.unsplash.com/photo-1579684385127-1ef15d508118?auto=format&fit=crop&w=600&q=80",
-      "afterImageUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80",
-      "patientAgeGender": "آقای ۵۲ ساله",
-      "procedureDuration": "کاشت ۶ پایه دیجیتال در یک جلسه",
-      "description": "کاشت بدون برش وسیع با بارگذاری فوری روکش موقت در همان روز جراحی."
-    }
-  ],
-  "reviews": [
-    {
-      "id": "rev-1",
-      "patientName": "مهسا تهرانی",
-      "procedure": "جراحی ارتوگناتیک دو فک",
-      "rating": 5,
-      "comment": "آقای دکتر شهیدی واقعا پنجه طلا هستند. بعد از عمل فک اصلا دردی که فکر می‌کردم رو نداشتم و ورم صورتم بعد دو هفته کامل خوابید. برخورد منشی و پیگیری بعد از عمل مطب پاسداران هم عالی بود.",
-      "date": "۱۴۰۳/۰۶/۱۸",
-      "verified": true
-    },
-    {
-      "id": "rev-2",
-      "patientName": "دکتر رضا میرزایی",
-      "procedure": "ایمپلنت دیجیتال فوری",
-      "rating": 5,
-      "comment": "دقت کار و تجهیزات اسکنر سه‌بعدی مطب فوق‌العاده‌ست. برای دو دندان جلو ایمپلنت انجام دادم بدون هیچ برشی و بعد از ظهر به کارهای روزمره‌م رسیدم. خدا بهشون سلامتی بده.",
-      "date": "۱۴۰۳/۰۶/۰۵",
-      "verified": true
-    },
-    {
-      "id": "rev-3",
-      "patientName": "پروانه کمالی",
-      "procedure": "جراحی دندان عقل افقی نهفته",
-      "rating": 5,
-      "comment": "دندان عقلم دقیقاً روی عصب بود و همه دندانپزشک‌ها می‌گفتند ممکنه لبت بی‌حس بمونه. دکتر شهیدی با پیزوسرجری در ۱۰ دقیقه بدون کوچکترین آسیب جراحیش کردند.",
-      "date": "۱۴۰۳/۰۶/۱۲",
-      "verified": true
-    }
-  ],
+  "gallery": [],
+  "reviews": [],
   "faqs": [
     {
       "id": "faq-1",

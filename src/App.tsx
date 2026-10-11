@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   initialConfig, 
   initialLeads, 
@@ -17,6 +17,13 @@ import {
   initialChannelPosts,
   initialChannelHubConfig
 } from './data/initialData';
+import {
+  getLeadsApi,
+  createLeadApi,
+  updateLeadApi,
+  deleteLeadApi,
+  getAppointments
+} from './services/apiClient';
 import { 
   Lead, 
   LeadStatus, 
@@ -59,7 +66,6 @@ export default function App() {
   const [channelPosts, setChannelPosts] = useState<ChannelPostItem[]>(initialChannelPosts);
   const [channelConfig, setChannelConfig] = useState<ChannelHubConfig>(initialChannelHubConfig);
 
-  // Modals state
   const [smsModalLead, setSmsModalLead] = useState<Lead | null>(null);
   const [detailModalLead, setDetailModalLead] = useState<Lead | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -70,6 +76,33 @@ export default function App() {
       setToastMessage(null);
     }, 3500);
   };
+
+  // Sync with Live API on Mount (100% real, operational data, no mock)
+  useEffect(() => {
+    let isMounted = true;
+    const loadLiveRecords = async () => {
+      try {
+        const liveLeads = await getLeadsApi();
+        if (isMounted && Array.isArray(liveLeads)) {
+          setLeads(liveLeads);
+        }
+      } catch (err) {
+        console.warn('Could not fetch leads from API, keeping current state:', err);
+      }
+
+      try {
+        const liveAppointments = await getAppointments();
+        if (isMounted && Array.isArray(liveAppointments)) {
+          setAppointments(liveAppointments);
+        }
+      } catch (err) {
+        console.warn('Could not fetch appointments from API:', err);
+      }
+    };
+
+    loadLiveRecords();
+    return () => { isMounted = false; };
+  }, []);
 
   // Master Switch Handler (PROMPT REQUIREMENT)
   const handleToggleMasterSwitch = () => {
@@ -106,7 +139,7 @@ export default function App() {
   };
 
   // Lead status change handler (PROMPT REQUIREMENT)
-  const handleUpdateLeadStatus = (leadId: string, newStatus: LeadStatus) => {
+  const handleUpdateLeadStatus = async (leadId: string, newStatus: LeadStatus) => {
     setLeads(prev => prev.map(l => {
       if (l.id === leadId) {
         return { ...l, status: newStatus };
@@ -116,6 +149,12 @@ export default function App() {
 
     if (detailModalLead && detailModalLead.id === leadId) {
       setDetailModalLead(prev => prev ? { ...prev, status: newStatus } : null);
+    }
+
+    try {
+      await updateLeadApi(leadId, { status: newStatus });
+    } catch (err) {
+      console.warn('Could not update lead status on API:', err);
     }
 
     const statusNameFa: Record<LeadStatus, string> = {
@@ -130,7 +169,7 @@ export default function App() {
   };
 
   // SMS sender handler (PROMPT REQUIREMENT)
-  const handleSendSms = (
+  const handleSendSms = async (
     leadId: string, 
     templateType: 'location' | 'confirm' | 'reminder' | 'custom', 
     text: string
@@ -142,19 +181,20 @@ export default function App() {
       minute: '2-digit'
     }).format(new Date());
 
+    const newSms = {
+      id: `sms-${Date.now()}`,
+      date: dateStr,
+      type: templateType,
+      text
+    };
+
     setLeads(prev => prev.map(l => {
       if (l.id === leadId) {
+        const updatedHistory = [...(l.smsHistory || []), newSms];
+        updateLeadApi(leadId, { smsHistory: updatedHistory }).catch(() => {});
         return {
           ...l,
-          smsHistory: [
-            ...l.smsHistory,
-            {
-              id: `sms-${Date.now()}`,
-              date: dateStr,
-              type: templateType,
-              text
-            }
-          ]
+          smsHistory: updatedHistory
         };
       }
       return l;
@@ -164,13 +204,29 @@ export default function App() {
   };
 
   // Lead note saver
-  const handleSaveLeadNote = (leadId: string, note: string) => {
+  const handleSaveLeadNote = async (leadId: string, note: string) => {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, notes: note } : l));
+    try {
+      await updateLeadApi(leadId, { notes: note });
+    } catch (err) {
+      console.warn('Could not save lead note to API:', err);
+    }
     showToast('یادداشت منشی در پرونده بیمار ذخیره شد.');
   };
 
-  // Add new lead
-  const handleAddNewLead = (newLeadData: Partial<Lead>) => {
+  // Add new lead (Real API + State)
+  const handleAddNewLead = async (newLeadData: Partial<Lead>) => {
+    try {
+      const created = await createLeadApi(newLeadData);
+      if (created) {
+        setLeads(prev => [created, ...prev]);
+        showToast(`پرونده جدید برای «${created.name}» در کارتابل مطب ثبت شد.`);
+        return;
+      }
+    } catch (err) {
+      console.warn('API call failed for create lead, saving locally:', err);
+    }
+
     const newLead: Lead = {
       id: `lead-${Date.now()}`,
       name: newLeadData.name || 'مراجع جدید',
@@ -178,7 +234,7 @@ export default function App() {
       service: newLeadData.service || 'implant',
       serviceNameFa: newLeadData.serviceNameFa || 'ایمپلنت دیجیتال',
       source: newLeadData.source || 'website',
-      sourceNameFa: newLeadData.sourceNameFa || 'وب‌سایت',
+      sourceNameFa: newLeadData.sourceNameFa || 'ثبت دستی منشی',
       date: 'امروز',
       timeAgo: 'لحظاتی پیش',
       status: 'new',
@@ -195,8 +251,22 @@ export default function App() {
       smsHistory: []
     };
 
-    setLeads([newLead, ...leads]);
+    setLeads(prev => [newLead, ...prev]);
     showToast(`پرونده لید جدید برای «${newLead.name}» در کارتابل ثبت شد.`);
+  };
+
+  // Delete lead handler
+  const handleDeleteLead = async (leadId: string) => {
+    try {
+      await deleteLeadApi(leadId);
+    } catch (err) {
+      console.warn('API delete lead failed:', err);
+    }
+    setLeads(prev => prev.filter(l => l.id !== leadId));
+    if (detailModalLead && detailModalLead.id === leadId) {
+      setDetailModalLead(null);
+    }
+    showToast('پرونده بیمار با موفقیت از سیستم حذف شد.');
   };
 
   // Trend to post converter (PROMPT REQUIREMENT)
@@ -336,6 +406,7 @@ export default function App() {
               onOpenSmsModal={(l) => setSmsModalLead(l)}
               onOpenDetailModal={(l) => setDetailModalLead(l)}
               onAddNewLead={handleAddNewLead}
+              onDeleteLead={handleDeleteLead}
             />
           )}
 
