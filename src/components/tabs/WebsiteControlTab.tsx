@@ -275,7 +275,10 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
         showToast(errText);
       }
     } catch (err: any) {
-      const errMsg = err.response?.data?.error || err.message || 'خطا در ارتباط با سرور';
+      let errMsg = err.response?.data?.error || err.message || 'خطا در ارتباط با سرور';
+      if (errMsg.includes('status code 400') || errMsg.includes('400')) {
+        errMsg = 'خطا در تنظیم مسیر ذخیره‌سازی. لطفاً فرمت آدرس را بررسی یا از گزینه‌های پیش‌فرض استفاده نمایید.';
+      }
       setStoragePathMessage({ type: 'error', text: errMsg });
       showToast(`خطا: ${errMsg}`);
     } finally {

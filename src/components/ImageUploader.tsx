@@ -62,14 +62,15 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     if (!file) return;
 
     // Check if image
-    if (!file.type.startsWith('image/') && !/\.(jpg|jpeg|png|webp|svg|gif|avif)$/i.test(file.name)) {
-      setErrorMessage('فقط فایل‌های تصویری با پسوند JPG, PNG, WEBP, SVG مجاز هستند.');
+    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|svg|gif|avif|bmp|jfif|heic|heif|tiff|tif|ico|dcm)$/i.test(file.name) || !file.name.includes('.');
+    if (!isImage) {
+      setErrorMessage('فایل انتخابی یک تصویر معتبر نیست. لطفاً یک فایل عکس انتخاب کنید.');
       return;
     }
 
-    // Check max size (30MB)
-    if (file.size > 30 * 1024 * 1024) {
-      setErrorMessage('حجم فایل بیشتر از ۳۰ مگابایت است.');
+    // Check max size (50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      setErrorMessage('حجم فایل بیشتر از ۵۰ مگابایت است.');
       return;
     }
 
@@ -88,7 +89,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         setErrorMessage(response?.message || 'خطا در آپلود عکس.');
       }
     } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'خطا در ارتباط با سرور آپلود';
+      let msg = err.response?.data?.error || err.message || 'خطا در ارتباط با سرور آپلود';
+      if (msg.includes('status code 400') || msg.includes('400')) {
+        msg = 'خطا در دریافت یا پردازش فایل توسط سرور. لطفاً فایل عکس را مجدداً انتخاب و امتحان کنید.';
+      }
       setErrorMessage(`خطا: ${msg}`);
     } finally {
       setIsUploading(false);
@@ -195,7 +199,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,.jpg,.jpeg,.png,.webp,.svg,.avif"
+        accept="image/*,.jpg,.jpeg,.png,.webp,.svg,.gif,.avif,.bmp,.jfif,.heic,.heif,.tiff,.tif,.ico,.dcm"
         onChange={handleFileSelect}
         className="hidden"
       />
