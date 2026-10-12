@@ -1485,10 +1485,14 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
                 <span className="text-slate-400">مسیر پیش‌فرض سیستم:</span>
                 <button
                   type="button"
-                  onClick={() => handleSaveStoragePath('/media/drshahidi')}
+                  onClick={() => {
+                    setCustomStoragePath('/media/drshahidi');
+                    handleSaveStoragePath('/media/drshahidi');
+                  }}
                   disabled={isSavingStoragePath}
-                  className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-teal-100 text-slate-700 hover:text-teal-800 font-mono text-[11px] font-semibold transition-colors"
+                  className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-teal-100 text-slate-700 hover:text-teal-800 font-mono text-[11px] font-semibold transition-colors dir-ltr"
                   title="بازنشانی به مسیر پیش‌فرض"
+                  dir="ltr"
                 >
                   /media/drshahidi
                 </button>
@@ -1539,10 +1543,10 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
               <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                 <span className="text-slate-400 font-medium text-[11px]">پیشنهادهای سریع:</span>
                 {[
-                  { label: '/media/drshahidi (پیش‌فرض)', path: '/media/drshahidi' },
-                  { label: './media/drshahidi (پوشه محلی پروژه)', path: './media/drshahidi' },
-                  { label: '/media/clinic_photos', path: '/media/clinic_photos' },
-                  { label: '/var/media/drshahidi', path: '/var/media/drshahidi' }
+                  { tag: 'پیش‌فرض', path: '/media/drshahidi' },
+                  { tag: 'پوشه محلی پروژه', path: './media/drshahidi' },
+                  { tag: 'پوشه عکس‌ها', path: '/media/clinic_photos' },
+                  { tag: 'پوشه var', path: '/var/media/drshahidi' }
                 ].map((preset) => (
                   <button
                     key={preset.path}
@@ -1552,13 +1556,14 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
                       handleSaveStoragePath(preset.path);
                     }}
                     disabled={isSavingStoragePath}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-mono border transition-all ${
+                    className={`px-2.5 py-1 rounded-xl text-[11px] border transition-all flex items-center gap-1.5 cursor-pointer ${
                       (mediaConfig?.currentPath || customStoragePath) === preset.path
                         ? 'bg-teal-50 text-teal-800 border-teal-300 font-bold'
                         : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
                     }`}
                   >
-                    {preset.label}
+                    <code className="font-mono dir-ltr" dir="ltr">{preset.path}</code>
+                    <span className="text-[10px] text-slate-500 font-sans">({preset.tag})</span>
                   </button>
                 ))}
               </div>

@@ -244,6 +244,10 @@ async function startServer() {
 
   // Dynamic static serving for media uploads directly from host storage with fallback support
   const serveMediaFile = (req: Request, res: Response, next: NextFunction) => {
+    // Only serve static files for GET and HEAD requests; leave API routes (POST, PUT, DELETE, etc.) alone
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (req.path.startsWith("/config") || req.path.startsWith("/files") || req.path.startsWith("/list")) return next();
+
     const rawFilename = req.path.replace(/^\/+/, "");
     const filename = path.basename(rawFilename);
     if (!filename || filename === "/") return next();
@@ -360,7 +364,7 @@ async function startServer() {
   // ==========================================
 
   // 1. Get current storage configuration and directory status
-  app.get("/api/media/config", (_req, res) => {
+  app.get(["/api/media/config", "/media/config"], (_req, res) => {
     try {
       const activeDir = getActiveMediaDir();
       const status = ensureDirectoryReady(activeDir);
@@ -390,7 +394,7 @@ async function startServer() {
   });
 
   // 2. Change storage path manually and auto-create directory if it doesn't exist
-  app.post("/api/media/config", (req, res) => {
+  app.post(["/api/media/config", "/media/config"], (req, res) => {
     try {
       const { storagePath } = req.body;
       if (!storagePath || typeof storagePath !== "string" || !storagePath.trim()) {
@@ -435,7 +439,7 @@ async function startServer() {
   });
 
   // 3. Upload image directly into active media storage directory
-  app.post("/api/upload", (req, res) => {
+  app.post(["/api/upload", "/upload"], (req, res) => {
     upload.single("image")(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
@@ -479,7 +483,7 @@ async function startServer() {
   });
 
   // 4. List all media files in the active storage directory
-  app.get("/api/media", (_req, res) => {
+  app.get(["/api/media", "/media/list", "/api/media/files"], (_req, res) => {
     try {
       const activeDir = getActiveMediaDir();
       if (!fs.existsSync(activeDir)) {
@@ -521,7 +525,7 @@ async function startServer() {
   });
 
   // 5. Delete file from storage
-  app.delete("/api/media/:filename", requireApiKey, (req, res) => {
+  app.delete(["/api/media/:filename", "/media/:filename"], requireApiKey, (req, res) => {
     try {
       const filename = path.basename(req.params.filename);
       const activeDir = getActiveMediaDir();

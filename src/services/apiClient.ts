@@ -399,13 +399,45 @@ export interface MediaConfigResponse {
 }
 
 export async function getMediaConfigApi(): Promise<MediaConfigResponse> {
-  const res = await siteApi.get('/media/config');
-  return res.data;
+  const currentBaseUrl = getApiBaseUrl();
+  const endpoint = currentBaseUrl.endsWith('/api') ? '/media/config' : '/api/media/config';
+
+  try {
+    const res = await siteApi.get(endpoint);
+    return res.data;
+  } catch (err: any) {
+    if (err.response?.status === 404 || !err.response) {
+      try {
+        const fb1 = await axios.get('/api/media/config');
+        return fb1.data;
+      } catch {
+        const fb2 = await axios.get('/media/config');
+        return fb2.data;
+      }
+    }
+    throw err;
+  }
 }
 
 export async function updateMediaConfigApi(storagePath: string): Promise<MediaConfigResponse> {
-  const res = await siteApi.post('/media/config', { storagePath });
-  return res.data;
+  const currentBaseUrl = getApiBaseUrl();
+  const endpoint = currentBaseUrl.endsWith('/api') ? '/media/config' : '/api/media/config';
+
+  try {
+    const res = await siteApi.post(endpoint, { storagePath });
+    return res.data;
+  } catch (err: any) {
+    if (err.response?.status === 404 || !err.response) {
+      try {
+        const fb1 = await axios.post('/api/media/config', { storagePath });
+        return fb1.data;
+      } catch {
+        const fb2 = await axios.post('/media/config', { storagePath });
+        return fb2.data;
+      }
+    }
+    throw err;
+  }
 }
 
 
