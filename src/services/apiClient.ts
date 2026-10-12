@@ -82,7 +82,13 @@ siteApi.interceptors.request.use((config) => {
 
   config.baseURL = currentBaseUrl;
   if (config.headers) {
-    (config.headers as any)['Content-Type'] = 'application/json';
+    // Crucial: Do not force application/json if sending FormData (multipart uploads)
+    const isFormData = typeof FormData !== 'undefined' && config.data instanceof FormData;
+    if (isFormData) {
+      delete (config.headers as any)['Content-Type'];
+    } else if (!config.headers['Content-Type']) {
+      (config.headers as any)['Content-Type'] = 'application/json';
+    }
     (config.headers as any)['x-api-key'] = currentKey;
     (config.headers as any)['Authorization'] = `Bearer ${currentKey}`;
   }
@@ -353,20 +359,37 @@ export async function uploadImageApi(
 ): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append('image', file);
+  formData.append('file', file); // Append under both 'image' and 'file'
 
-  const res = await siteApi.post('/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    },
-    onUploadProgress: (progressEvent) => {
-      if (progressEvent.total && onProgress) {
-        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-        onProgress(percent);
+  const currentBaseUrl = getApiBaseUrl();
+  const endpoint = currentBaseUrl.endsWith('/api') ? '/upload' : '/api/upload';
+
+  try {
+    const res = await siteApi.post(endpoint, formData, {
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
       }
+    });
+    return res.data;
+  } catch (err: any) {
+    if (err.response?.status === 404 || !err.response) {
+      try {
+        const direct = await axios.post('/api/upload', formData, {
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total && onProgress) {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              onProgress(percent);
+            }
+          }
+        });
+        return direct.data;
+      } catch {}
     }
-  });
-
-  return res.data;
+    throw err;
+  }
 }
 
 export async function getMediaFilesApi(): Promise<Array<{

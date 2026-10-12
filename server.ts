@@ -440,7 +440,7 @@ async function startServer() {
 
   // 3. Upload image directly into active media storage directory
   app.post(["/api/upload", "/upload"], (req, res) => {
-    upload.single("image")(req, res, (err) => {
+    upload.any()(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
           if (err.code === "LIMIT_FILE_SIZE") {
@@ -451,11 +451,13 @@ async function startServer() {
         return res.status(400).json({ success: false, error: err.message || "خطا در پردازش تصویر" });
       }
 
-      const uploadedFile = req.file;
+      const files = req.files as Express.Multer.File[] | undefined;
+      const uploadedFile = (files && files.length > 0 ? files[0] : req.file);
+
       if (!uploadedFile) {
         return res.status(400).json({
           success: false,
-          error: "هیچ فایلی ارسال نشده است. لطفاً فایل عکس را با فیلد 'image' ارسال نمایید."
+          error: "هیچ فایلی دریافت نشد. لطفاً فایل تصویر را مجدداً انتخاب و ارسال نمایید."
         });
       }
 
