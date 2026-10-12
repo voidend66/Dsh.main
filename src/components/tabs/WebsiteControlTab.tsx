@@ -34,6 +34,8 @@ import {
   ArrowRight,
   HardDrive,
   FolderOpen,
+  FolderPlus,
+  Folder,
   Upload
 } from 'lucide-react';
 import { 
@@ -76,7 +78,10 @@ import {
   getReviewsApi,
   getFaqsApi,
   getMediaFilesApi,
-  deleteMediaFileApi
+  deleteMediaFileApi,
+  getMediaConfigApi,
+  updateMediaConfigApi,
+  MediaConfigResponse
 } from '../../services/apiClient';
 import { ImageUploader } from '../ImageUploader';
 
@@ -117,6 +122,10 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
   const [mediaList, setMediaList] = useState<Array<{ filename: string; url: string; size: number; createdAt: string; isImage?: boolean }>>([]);
   const [isLoadingMedia, setIsLoadingMedia] = useState<boolean>(false);
   const [mediaSearch, setMediaSearch] = useState<string>('');
+  const [mediaConfig, setMediaConfig] = useState<MediaConfigResponse | null>(null);
+  const [customStoragePath, setCustomStoragePath] = useState<string>('/media/drshahidi');
+  const [isSavingStoragePath, setIsSavingStoragePath] = useState<boolean>(false);
+  const [storagePathMessage, setStoragePathMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Search and filters
   const [articleSearch, setArticleSearch] = useState<string>('');
@@ -187,13 +196,14 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
 
     // 2. Fetch live collections from direct API
     try {
-      const [articlesData, appointmentsData, doctorData, hoursData, servicesData, mediaData] = await Promise.all([
+      const [articlesData, appointmentsData, doctorData, hoursData, servicesData, mediaData, configData] = await Promise.all([
         getArticles(),
         getAppointments(),
         getDoctorProfile(),
         getClinicHours(),
         getServicesApi(),
-        getMediaFilesApi()
+        getMediaFilesApi(),
+        getMediaConfigApi().catch(() => null)
       ]);
 
       setArticlesList(Array.isArray(articlesData) ? articlesData : []);
@@ -206,6 +216,10 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
       if (hoursData) setClinicHours(hoursData);
       if (Array.isArray(servicesData)) setServices(servicesData);
       if (Array.isArray(mediaData)) setMediaList(mediaData);
+      if (configData && configData.currentPath) {
+        setMediaConfig(configData);
+        setCustomStoragePath(configData.currentPath);
+      }
     } catch (err: any) {
       console.error('Error fetching live data from API:', err);
       setConnectionStatus('error');
@@ -218,9 +232,16 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
   const handleRefreshMedia = async () => {
     setIsLoadingMedia(true);
     try {
-      const files = await getMediaFilesApi();
+      const [files, cfg] = await Promise.all([
+        getMediaFilesApi(),
+        getMediaConfigApi().catch(() => null)
+      ]);
       setMediaList(files);
-      showToast('فهرست تصاویر در /media/drshahidi به‌روزرسانی شد.');
+      if (cfg && cfg.currentPath) {
+        setMediaConfig(cfg);
+        setCustomStoragePath(cfg.currentPath);
+      }
+      showToast('فهرست تصاویر و وضعیت پوشه ذخیره‌سازی به‌روزرسانی شد.');
     } catch (err: any) {
       showToast(`خطا در بازخوانی فایل‌های رسانه: ${err.message}`);
     } finally {
@@ -228,8 +249,43 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
     }
   };
 
+  const handleSaveStoragePath = async (overridePath?: string) => {
+    const targetPath = (overridePath || customStoragePath || '').trim();
+    if (!targetPath) {
+      showToast('لطفاً یک مسیر ذخیره‌سازی معتبر وارد کنید.');
+      return;
+    }
+    setIsSavingStoragePath(true);
+    setStoragePathMessage(null);
+    try {
+      const res = await updateMediaConfigApi(targetPath);
+      if (res && res.success) {
+        setMediaConfig(res);
+        setCustomStoragePath(res.currentPath);
+        setStoragePathMessage({
+          type: 'success',
+          text: res.message || 'مسیر با موفقیت تنظیم و ذخیره شد.'
+        });
+        showToast(res.message || 'مسیر ذخیره‌سازی با موفقیت تنظیم شد.');
+        const files = await getMediaFilesApi();
+        setMediaList(files);
+      } else {
+        const errText = res?.error || 'خطا در ثبت مسیر جدید';
+        setStoragePathMessage({ type: 'error', text: errText });
+        showToast(errText);
+      }
+    } catch (err: any) {
+      const errMsg = err.response?.data?.error || err.message || 'خطا در ارتباط با سرور';
+      setStoragePathMessage({ type: 'error', text: errMsg });
+      showToast(`خطا: ${errMsg}`);
+    } finally {
+      setIsSavingStoragePath(false);
+    }
+  };
+
   const handleDeleteMedia = async (filename: string) => {
-    if (!window.confirm(`آیا از حذف عکس «${filename}» از مسیر /media/drshahidi اطمینان دارید؟`)) return;
+    const activeDir = mediaConfig?.currentPath || customStoragePath || '/media/drshahidi';
+    if (!window.confirm(`آیا از حذف عکس «${filename}» از مسیر «${activeDir}» اطمینان دارید؟`)) return;
     try {
       const ok = await deleteMediaFileApi(filename);
       if (ok) {
@@ -864,7 +920,7 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
           }`}
         >
           <HardDrive className="w-4 h-4 text-teal-600" />
-          <span>آپلود و رسانه‌ها (/media/drshahidi)</span>
+          <span>حافظه تصاویر ({mediaConfig?.currentPath || customStoragePath})</span>
           <span className="text-xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono">
             {toPersianDigits(mediaList.length)}
           </span>
@@ -1361,11 +1417,29 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
                   <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-300 flex items-center justify-center border border-teal-400/30">
                     <HardDrive className="w-5 h-5" />
                   </div>
-                  <h3 className="text-base font-bold">حافظه محلی ذخیره‌سازی تصاویر مطب (/media/drshahidi)</h3>
+                  <h3 className="text-base font-bold">
+                    حافظه ذخیره‌سازی تصاویر مطب ({mediaConfig?.currentPath || customStoragePath})
+                  </h3>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                  تمام تصاویری که در بخش <strong>خدمات جدید</strong> یا <strong>مقالات جدید</strong> یا مستقیماً در این پنل آپلود می‌کنید، در مسیر دائمی <code className="bg-teal-950/80 px-2 py-0.5 rounded text-teal-300 font-mono">/media/drshahidi</code> ذخیره شده و از طریق آدرس استاتیک وب‌سایت در دسترس قرار می‌گیرند.
+                  تمام تصاویری که در بخش <strong>خدمات جدید</strong> یا <strong>مقالات جدید</strong> یا مستقیماً در این پنل آپلود می‌کنید، در مسیر مشخص‌شده ذخیره شده و از طریق وب‌سایت در دسترس قرار می‌گیرند. اگر مسیر وجود نداشته باشد، به‌طور خودکار ساخته می‌شود.
                 </p>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                    mediaConfig?.writable !== false
+                      ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                      : 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                  }`}>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {mediaConfig?.writable !== false ? 'آماده ذخیره‌سازی و دسترسی نوشتن دیسک فعال است' : 'نیاز به بررسی دسترسی نوشتن'}
+                  </span>
+                  {mediaConfig?.created && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-500/40">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      پوشه جدید به‌صورت خودکار توسط سیستم ایجاد شد
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="bg-slate-800/90 border border-slate-700/80 p-4 rounded-2xl shrink-0 text-xs font-mono space-y-2">
@@ -1374,19 +1448,138 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
                   <span className="text-teal-300 font-bold">{toPersianDigits(mediaList.length)} تصویر</span>
                 </div>
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-slate-400">پوشه ذخیره‌سازی:</span>
-                  <span className="text-amber-300 font-bold">/media/drshahidi</span>
+                  <span className="text-slate-400">مسیر فعال ذخیره:</span>
+                  <span className="text-amber-300 font-bold select-all dir-ltr">{mediaConfig?.currentPath || customStoragePath}</span>
                 </div>
                 <button
                   type="button"
                   onClick={handleRefreshMedia}
                   disabled={isLoadingMedia}
-                  className="w-full mt-1 px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-sans font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                  className="w-full mt-1 px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-sans font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMedia ? 'animate-spin' : ''}`} />
-                  <span>به‌روزرسانی لیست فایل‌ها</span>
+                  <span>به‌روزرسانی لیست و بررسی وضعیت</span>
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* STORAGE PATH CONFIGURATION & AUTO-CREATE CARD */}
+          <div className="bg-white border-2 border-teal-500/30 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200">
+                  <FolderPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">
+                    تنظیم دستی مسیر ذخیره‌سازی و ساخت خودکار پوشه
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    می‌توانید مسیر دلخواه خود را تایپ کنید؛ در صورت عدم وجود، پوشه به‌صورت خودکار (mkdir -p) ساخته می‌شود.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-400">مسیر پیش‌فرض سیستم:</span>
+                <button
+                  type="button"
+                  onClick={() => handleSaveStoragePath('/media/drshahidi')}
+                  disabled={isSavingStoragePath}
+                  className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-teal-100 text-slate-700 hover:text-teal-800 font-mono text-[11px] font-semibold transition-colors"
+                  title="بازنشانی به مسیر پیش‌فرض"
+                >
+                  /media/drshahidi
+                </button>
+              </div>
+            </div>
+
+            {/* Path Input Form */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  آدرس پوشه مورد نظر در حافظه سیستم (دایرکتوری مقصد):
+                </label>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1">
+                    <Folder className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={customStoragePath}
+                      onChange={(e) => setCustomStoragePath(e.target.value)}
+                      placeholder="/media/drshahidi یا ./media/drshahidi یا /var/www/uploads"
+                      className="w-full pr-10 pl-3 py-2 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:border-teal-500 bg-slate-50/60 focus:bg-white text-left dir-ltr"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSaveStoragePath()}
+                    disabled={isSavingStoragePath}
+                    className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors shrink-0 shadow-xs cursor-pointer"
+                  >
+                    {isSavingStoragePath ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>در حال بررسی و ساخت خودکار پوشه...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FolderPlus className="w-4 h-4" />
+                        <span>ذخیره مسیر و ایجاد خودکار پوشه</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                <span className="text-slate-400 font-medium text-[11px]">پیشنهادهای سریع:</span>
+                {[
+                  { label: '/media/drshahidi (پیش‌فرض)', path: '/media/drshahidi' },
+                  { label: './media/drshahidi (پوشه محلی پروژه)', path: './media/drshahidi' },
+                  { label: '/media/clinic_photos', path: '/media/clinic_photos' },
+                  { label: '/var/media/drshahidi', path: '/var/media/drshahidi' }
+                ].map((preset) => (
+                  <button
+                    key={preset.path}
+                    type="button"
+                    onClick={() => {
+                      setCustomStoragePath(preset.path);
+                      handleSaveStoragePath(preset.path);
+                    }}
+                    disabled={isSavingStoragePath}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-mono border transition-all ${
+                      (mediaConfig?.currentPath || customStoragePath) === preset.path
+                        ? 'bg-teal-50 text-teal-800 border-teal-300 font-bold'
+                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Status & Feedback message */}
+              {storagePathMessage && (
+                <div
+                  className={`p-3 rounded-2xl text-xs flex items-center gap-2 ${
+                    storagePathMessage.type === 'success'
+                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border border-rose-200 text-rose-800'
+                  }`}
+                >
+                  {storagePathMessage.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span className="font-medium leading-relaxed">{storagePathMessage.text}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1396,22 +1589,23 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
               <div>
                 <h4 className="text-sm font-bold text-slate-900">آپلود سریع تصویر جدید به حافظه سیستم</h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  عکس را بکشید یا انتخاب کنید تا مستقیماً با نام امن در /media/drshahidi ذخیره شود.
+                  عکس انتخابی مستقیماً در مسیر <code className="font-mono text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded dir-ltr">{mediaConfig?.currentPath || customStoragePath}</code> ذخیره می‌شود (اگر پوشه نباشد خودکار ساخته می‌شود).
                 </p>
               </div>
             </div>
 
             <ImageUploader
-              label="فایل تصویر برای آپلود"
+              label="فایل تصویر برای آپلود مستقیم"
               value=""
+              storagePath={mediaConfig?.currentPath || customStoragePath}
               onChange={async (uploadedUrl) => {
                 if (uploadedUrl) {
-                  showToast(`تصویر با موفقیت در /media/drshahidi ذخیره شد: ${uploadedUrl}`);
+                  showToast(`تصویر با موفقیت در «${mediaConfig?.currentPath || customStoragePath}» ذخیره شد: ${uploadedUrl}`);
                   const files = await getMediaFilesApi();
                   setMediaList(files);
                 }
               }}
-              description="عکس بلافاصله روی دیسک سیستم ذخیره شده و آدرس وب آن برای استفاده در سایت در دسترس است."
+              description={`عکس بلافاصله روی دیسک سیستم در پوشه ${mediaConfig?.currentPath || customStoragePath} ذخیره شده و در سایت متصل می‌گردد.`}
             />
           </div>
 
@@ -1848,10 +2042,11 @@ echo $response;
 
               <div>
                 <ImageUploader
-                  label="عکس شاخص مقاله (heroImage / ذخیره خودکار در /media/drshahidi)"
+                  label="عکس شاخص مقاله (heroImage / ذخیره مستقیم در حافظه سیستم)"
                   value={fastArtImageUrl}
                   onChange={setFastArtImageUrl}
-                  description="فایل انتخابی مستقیماً در حافظه سیستم /media/drshahidi ذخیره و به وب‌سایت متصل می‌شود."
+                  storagePath={mediaConfig?.currentPath || customStoragePath}
+                  description={`فایل انتخابی مستقیماً در حافظه سیستم (${mediaConfig?.currentPath || customStoragePath}) ذخیره و به وب‌سایت متصل می‌شود (اگر پوشه نباشد خودکار ساخته می‌شود).`}
                 />
               </div>
 
@@ -2063,10 +2258,11 @@ echo $response;
 
               <div>
                 <ImageUploader
-                  label="عکس اختصاصی خدمت (بارگذاری در /media/drshahidi)"
+                  label="عکس اختصاصی خدمت (بارگذاری در حافظه سیستم)"
                   value={newSrvImageUrl}
                   onChange={setNewSrvImageUrl}
-                  description="عکس به طور مستقیم در /media/drshahidi ذخیره و به وب‌سایت متصل می‌شود."
+                  storagePath={mediaConfig?.currentPath || customStoragePath}
+                  description={`عکس به طور مستقیم در حافظه سیستم (${mediaConfig?.currentPath || customStoragePath}) ذخیره و به وب‌سایت متصل می‌شود (اگر پوشه نباشد خودکار ساخته می‌شود).`}
                 />
               </div>
 

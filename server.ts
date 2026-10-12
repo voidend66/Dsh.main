@@ -12,26 +12,159 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const DB_FILE = path.join(process.cwd(), "data", "db.json");
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "dr-shahidi-key-2026";
 
-// Media storage directory configuration: User specified storage path /media/drshahidi
-const MEDIA_DIR = "/media/drshahidi";
-try {
-  if (!fs.existsSync(MEDIA_DIR)) {
-    fs.mkdirSync(MEDIA_DIR, { recursive: true });
-  }
-} catch (err) {
-  console.warn("Notice: /media/drshahidi directory initialization:", err);
+// Database schema and helper functions
+interface DatabaseSchema {
+  doctor: any;
+  clinicHours: any;
+  articles: any[];
+  appointments: any[];
+  leads: any[];
+  services: any[];
+  gallery: any[];
+  reviews: any[];
+  faqs: any[];
+  settings?: {
+    mediaStorageDir?: string;
+    [key: string]: any;
+  };
 }
 
-// Multer disk storage engine to save files directly into /media/drshahidi
+function readDb(): DatabaseSchema {
+  try {
+    if (!fs.existsSync(DB_FILE)) {
+      const dir = path.dirname(DB_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const initialEmpty: DatabaseSchema = {
+        doctor: {},
+        clinicHours: {},
+        articles: [],
+        appointments: [],
+        leads: [],
+        services: [],
+        gallery: [],
+        reviews: [],
+        faqs: [],
+        settings: {
+          mediaStorageDir: "/media/drshahidi"
+        }
+      };
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialEmpty, null, 2), "utf8");
+      return initialEmpty;
+    }
+    const raw = fs.readFileSync(DB_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed.leads) parsed.leads = [];
+    if (!parsed.settings) parsed.settings = { mediaStorageDir: "/media/drshahidi" };
+    return parsed;
+  } catch (err) {
+    console.error("Error reading database:", err);
+    return {
+      doctor: {},
+      clinicHours: {},
+      articles: [],
+      appointments: [],
+      leads: [],
+      services: [],
+      gallery: [],
+      reviews: [],
+      faqs: [],
+      settings: {
+        mediaStorageDir: "/media/drshahidi"
+      }
+    };
+  }
+}
+
+function writeDb(data: DatabaseSchema): boolean {
+  try {
+    const dir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+    return true;
+  } catch (err) {
+    console.error("Error writing database:", err);
+    return false;
+  }
+}
+
+// Media storage directory configuration: User specified storage path (default: /media/drshahidi)
+const DEFAULT_MEDIA_DIR = "/media/drshahidi";
+
+// Get active storage directory from persistent settings, env var, or default
+function getActiveMediaDir(): string {
+  try {
+    const db = readDb();
+    if (db.settings?.mediaStorageDir && typeof db.settings.mediaStorageDir === "string" && db.settings.mediaStorageDir.trim()) {
+      return db.settings.mediaStorageDir.trim();
+    }
+  } catch (err) {
+    console.warn("Could not read mediaStorageDir from db:", err);
+  }
+  return process.env.MEDIA_STORAGE_DIR || DEFAULT_MEDIA_DIR;
+}
+
+// Automatically creates directory recursively if missing, and validates writability
+function ensureDirectoryReady(targetPath: string): {
+  exists: boolean;
+  created: boolean;
+  writable: boolean;
+  error?: string;
+  resolvedPath: string;
+} {
+  const normalized = path.resolve(targetPath.trim());
+  let created = false;
+  let writable = false;
+  let error: string | undefined;
+
+  try {
+    if (!fs.existsSync(normalized)) {
+      fs.mkdirSync(normalized, { recursive: true });
+      created = true;
+    }
+    // Test write permission
+    const testFile = path.join(normalized, `.write_test_${Date.now()}`);
+    fs.writeFileSync(testFile, "ok", "utf8");
+    fs.unlinkSync(testFile);
+    writable = true;
+  } catch (err: any) {
+    error = err.message || String(err);
+    console.warn(`[STORAGE PATH WARNING] ${normalized}:`, err.message);
+  }
+
+  return {
+    resolvedPath: normalized,
+    exists: fs.existsSync(normalized),
+    created,
+    writable,
+    error
+  };
+}
+
+// Initialize active media storage on startup
+try {
+  const initialDir = getActiveMediaDir();
+  const initStatus = ensureDirectoryReady(initialDir);
+  console.log(`[MEDIA STORAGE] Active directory initialized: ${initialDir} (exists: ${initStatus.exists}, created: ${initStatus.created}, writable: ${initStatus.writable})`);
+} catch (err) {
+  console.warn("Notice during initial media storage setup:", err);
+}
+
+// Multer disk storage engine to save files directly into active media storage directory
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
+    const targetDir = getActiveMediaDir();
     try {
-      if (!fs.existsSync(MEDIA_DIR)) {
-        fs.mkdirSync(MEDIA_DIR, { recursive: true });
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
       }
-      cb(null, MEDIA_DIR);
+      cb(null, targetDir);
     } catch (err: any) {
-      cb(err, MEDIA_DIR);
+      console.warn(`[MULTER] Failed to ensure directory ${targetDir}:`, err.message);
+      cb(err, targetDir);
     }
   },
   filename: (_req, file, cb) => {
@@ -59,73 +192,6 @@ const upload = multer({
   }
 });
 
-interface DatabaseSchema {
-  doctor: any;
-  clinicHours: any;
-  articles: any[];
-  appointments: any[];
-  leads: any[];
-  services: any[];
-  gallery: any[];
-  reviews: any[];
-  faqs: any[];
-}
-
-// Database helper functions
-function readDb(): DatabaseSchema {
-  try {
-    if (!fs.existsSync(DB_FILE)) {
-      const dir = path.dirname(DB_FILE);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      const initialEmpty: DatabaseSchema = {
-        doctor: {},
-        clinicHours: {},
-        articles: [],
-        appointments: [],
-        leads: [],
-        services: [],
-        gallery: [],
-        reviews: [],
-        faqs: []
-      };
-      fs.writeFileSync(DB_FILE, JSON.stringify(initialEmpty, null, 2), "utf8");
-      return initialEmpty;
-    }
-    const raw = fs.readFileSync(DB_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed.leads) parsed.leads = [];
-    return parsed;
-  } catch (err) {
-    console.error("Error reading database:", err);
-    return {
-      doctor: {},
-      clinicHours: {},
-      articles: [],
-      appointments: [],
-      leads: [],
-      services: [],
-      gallery: [],
-      reviews: [],
-      faqs: []
-    };
-  }
-}
-
-function writeDb(data: DatabaseSchema): boolean {
-  try {
-    const dir = path.dirname(DB_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
-    return true;
-  } catch (err) {
-    console.error("Error writing database:", err);
-    return false;
-  }
-}
 
 // Authentication middleware
 function requireApiKey(req: Request, res: Response, next: NextFunction): void {
@@ -176,9 +242,33 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-  // Static serving for media uploads directly from host storage (/media/drshahidi)
-  app.use("/media/drshahidi", express.static(MEDIA_DIR, { maxAge: "7d" }));
-  app.use("/media", express.static(MEDIA_DIR, { maxAge: "7d" }));
+  // Dynamic static serving for media uploads directly from host storage with fallback support
+  const serveMediaFile = (req: Request, res: Response, next: NextFunction) => {
+    const rawFilename = req.path.replace(/^\/+/, "");
+    const filename = path.basename(rawFilename);
+    if (!filename || filename === "/") return next();
+
+    const activeDir = getActiveMediaDir();
+    const candidatePaths = [
+      path.join(activeDir, filename),
+      path.join(DEFAULT_MEDIA_DIR, filename),
+      path.join(process.cwd(), "media", "drshahidi", filename)
+    ];
+
+    for (const filePath of candidatePaths) {
+      try {
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+          return res.sendFile(filePath, { maxAge: "7d" });
+        }
+      } catch {
+        // continue
+      }
+    }
+    next();
+  };
+
+  app.use("/media/drshahidi", serveMediaFile);
+  app.use("/media", serveMediaFile);
 
   // Request logger for API calls
   app.use("/api", (req, _res, next) => {
@@ -255,8 +345,10 @@ async function startServer() {
           "DELETE /api/faqs/:id": "حذف سوال (نیازمند x-api-key)"
         },
         media: {
-          "POST /api/upload": "آپلود مستقیم عکس در سیستم (/media/drshahidi) با فرمت multipart/form-data و کلید image یا file",
-          "GET /api/media": "مشاهده لیست تصاویر و رسانه‌های ذخیره‌شده در /media/drshahidi",
+          "GET /api/media/config": "دریافت مسیر فعلی ذخیره‌سازی، وضعیت وجود پوشه، و دسترسی نوشتن",
+          "POST /api/media/config": "تغییر دستی مسیر ذخیره‌سازی فایل‌ها و ایجاد خودکار پوشه در صورت عدم وجود (بدنه: { storagePath: string })",
+          "POST /api/upload": "آپلود مستقیم عکس در مسیر فعال سیستم با فرمت multipart/form-data و کلید image یا file",
+          "GET /api/media": "مشاهده لیست تصاویر و رسانه‌های ذخیره‌شده در مسیر فعال سیستم",
           "DELETE /api/media/:filename": "حذف تصویر از حافظه سیستم (نیازمند x-api-key)"
         }
       }
@@ -264,8 +356,85 @@ async function startServer() {
   });
 
   // ==========================================
-  // MEDIA UPLOAD & STORAGE ENDPOINTS (/media/drshahidi)
+  // MEDIA UPLOAD & CONFIGURATION ENDPOINTS
   // ==========================================
+
+  // 1. Get current storage configuration and directory status
+  app.get("/api/media/config", (_req, res) => {
+    try {
+      const activeDir = getActiveMediaDir();
+      const status = ensureDirectoryReady(activeDir);
+      let totalFiles = 0;
+      try {
+        if (fs.existsSync(activeDir)) {
+          totalFiles = fs.readdirSync(activeDir).filter(f => !f.startsWith(".")).length;
+        }
+      } catch {
+        totalFiles = 0;
+      }
+
+      return res.json({
+        success: true,
+        currentPath: activeDir,
+        resolvedPath: status.resolvedPath,
+        defaultPath: DEFAULT_MEDIA_DIR,
+        exists: status.exists,
+        writable: status.writable,
+        created: status.created,
+        totalFiles,
+        error: status.error || null
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 2. Change storage path manually and auto-create directory if it doesn't exist
+  app.post("/api/media/config", (req, res) => {
+    try {
+      const { storagePath } = req.body;
+      if (!storagePath || typeof storagePath !== "string" || !storagePath.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "مسیر ذخیره‌سازی نامعتبر است. لطفاً یک آدرس معتبر وارد نمایید."
+        });
+      }
+
+      const cleanPath = storagePath.trim();
+      const status = ensureDirectoryReady(cleanPath);
+
+      if (!status.exists && !status.created) {
+        return res.status(500).json({
+          success: false,
+          error: `خطا در ایجاد خودکار یا دسترسی به مسیر «${cleanPath}»: ${status.error || "محدودیت دسترسی سیستم"}`
+        });
+      }
+
+      // Persist in db.json settings
+      const db = readDb();
+      if (!db.settings) db.settings = {};
+      db.settings.mediaStorageDir = cleanPath;
+      writeDb(db);
+
+      console.log(`[STORAGE CONFIG] Media directory set to: ${cleanPath} (Auto-created: ${status.created}, Writable: ${status.writable})`);
+
+      return res.json({
+        success: true,
+        message: status.created 
+          ? `مسیر «${cleanPath}» وجود نداشت و به‌صورت خودکار توسط سیستم ایجاد گردید و آماده ذخیره‌سازی است.`
+          : `مسیر «${cleanPath}» با موفقیت به‌عنوان پوشه ذخیره‌سازی تصاویر ثبت گردید.`,
+        currentPath: cleanPath,
+        resolvedPath: status.resolvedPath,
+        created: status.created,
+        exists: status.exists,
+        writable: status.writable
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 3. Upload image directly into active media storage directory
   app.post("/api/upload", (req, res) => {
     upload.single("image")(req, res, (err) => {
       if (err) {
@@ -278,7 +447,6 @@ async function startServer() {
         return res.status(400).json({ success: false, error: err.message || "خطا در پردازش تصویر" });
       }
 
-      // If file wasn't sent under 'image', check if it was sent under 'file'
       const uploadedFile = req.file;
       if (!uploadedFile) {
         return res.status(400).json({
@@ -287,38 +455,45 @@ async function startServer() {
         });
       }
 
+      const activeDir = getActiveMediaDir();
       const host = req.get("host") || `localhost:${PORT}`;
       const protocol = req.protocol || "http";
       const relativeUrl = `/media/drshahidi/${uploadedFile.filename}`;
       const fullUrl = `${protocol}://${host}${relativeUrl}`;
 
-      console.log(`[MEDIA UPLOAD] Successfully stored: ${uploadedFile.filename} in ${MEDIA_DIR} (${uploadedFile.size} bytes)`);
+      console.log(`[MEDIA UPLOAD] Successfully stored: ${uploadedFile.filename} in ${activeDir} (${uploadedFile.size} bytes)`);
 
       return res.status(200).json({
         success: true,
-        message: "تصویر با موفقیت در حافظه سیستم (/media/drshahidi) ذخیره گردید.",
+        message: `تصویر با موفقیت در حافظه سیستم (${activeDir}) ذخیره گردید.`,
         url: relativeUrl,
         fullUrl,
         filename: uploadedFile.filename,
         originalName: uploadedFile.originalname,
         size: uploadedFile.size,
         mimetype: uploadedFile.mimetype,
-        storagePath: path.join(MEDIA_DIR, uploadedFile.filename)
+        storagePath: path.join(activeDir, uploadedFile.filename),
+        activeDir
       });
     });
   });
 
+  // 4. List all media files in the active storage directory
   app.get("/api/media", (_req, res) => {
     try {
-      if (!fs.existsSync(MEDIA_DIR)) {
-        return res.json({ success: true, mediaDir: MEDIA_DIR, count: 0, files: [] });
+      const activeDir = getActiveMediaDir();
+      if (!fs.existsSync(activeDir)) {
+        ensureDirectoryReady(activeDir);
       }
 
-      const fileNames = fs.readdirSync(MEDIA_DIR).filter(f => !f.startsWith("."));
+      const fileNames = fs.existsSync(activeDir) 
+        ? fs.readdirSync(activeDir).filter(f => !f.startsWith("."))
+        : [];
+
       const files = fileNames
         .map(filename => {
           try {
-            const filePath = path.join(MEDIA_DIR, filename);
+            const filePath = path.join(activeDir, filename);
             const stats = fs.statSync(filePath);
             return {
               filename,
@@ -336,7 +511,7 @@ async function startServer() {
 
       return res.json({
         success: true,
-        mediaDir: MEDIA_DIR,
+        mediaDir: activeDir,
         count: files.length,
         files
       });
@@ -345,15 +520,27 @@ async function startServer() {
     }
   });
 
+  // 5. Delete file from storage
   app.delete("/api/media/:filename", requireApiKey, (req, res) => {
     try {
       const filename = path.basename(req.params.filename);
-      const filePath = path.join(MEDIA_DIR, filename);
+      const activeDir = getActiveMediaDir();
+      const primaryPath = path.join(activeDir, filename);
 
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log(`[MEDIA DELETE] Deleted ${filePath}`);
-        return res.json({ success: true, message: `فایل ${filename} با موفقیت حذف شد.` });
+      if (fs.existsSync(primaryPath)) {
+        fs.unlinkSync(primaryPath);
+        console.log(`[MEDIA DELETE] Deleted ${primaryPath}`);
+        return res.json({ success: true, message: `فایل «${filename}» با موفقیت حذف شد.` });
+      }
+
+      // Check fallback path if activeDir is customized
+      if (activeDir !== DEFAULT_MEDIA_DIR) {
+        const fallbackPath = path.join(DEFAULT_MEDIA_DIR, filename);
+        if (fs.existsSync(fallbackPath)) {
+          fs.unlinkSync(fallbackPath);
+          console.log(`[MEDIA DELETE] Deleted fallback ${fallbackPath}`);
+          return res.json({ success: true, message: `فایل «${filename}» با موفقیت حذف شد.` });
+        }
       }
 
       return res.status(404).json({ success: false, error: "فایل تصویر در حافظه یافت نشد." });

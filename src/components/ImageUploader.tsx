@@ -11,7 +11,7 @@ import {
   ExternalLink,
   Sparkles
 } from 'lucide-react';
-import { uploadImageApi, getMediaFilesApi, UploadResponse } from '../services/apiClient';
+import { uploadImageApi, getMediaFilesApi, getMediaConfigApi, UploadResponse } from '../services/apiClient';
 
 interface ImageUploaderProps {
   label: string;
@@ -19,15 +19,18 @@ interface ImageUploaderProps {
   onChange: (url: string) => void;
   description?: string;
   required?: boolean;
+  storagePath?: string;
 }
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
   label,
   value,
   onChange,
-  description = 'عکس به صورت خودکار در حافظه سیستم (/media/drshahidi) ذخیره و به وب‌سایت متصل می‌شود.',
-  required = false
+  description,
+  required = false,
+  storagePath
 }) => {
+  const [activeStoragePath, setActiveStoragePath] = useState<string>(storagePath || '/media/drshahidi');
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -37,6 +40,21 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   const [libraryFiles, setLibraryFiles] = useState<Array<{ filename: string; url: string; size: number; createdAt: string }>>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState<boolean>(false);
   const [showDirectUrlInput, setShowDirectUrlInput] = useState<boolean>(false);
+
+  // If storagePath is not provided via prop, fetch active storage config
+  React.useEffect(() => {
+    if (storagePath) {
+      setActiveStoragePath(storagePath);
+    } else {
+      getMediaConfigApi()
+        .then((cfg) => {
+          if (cfg && cfg.currentPath) {
+            setActiveStoragePath(cfg.currentPath);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [storagePath]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -153,7 +171,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             className="text-teal-600 hover:text-teal-700 font-medium flex items-center gap-1 transition-colors"
           >
             <FolderOpen className="w-3.5 h-3.5" />
-            <span>آرشیو /media/drshahidi</span>
+            <span>آرشیو تصاویر</span>
           </button>
           <span className="text-slate-300">|</span>
           <button
@@ -166,12 +184,12 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         </div>
       </div>
 
-      {description && (
-        <p className="text-[11px] text-slate-400 flex items-center gap-1">
-          <HardDrive className="w-3 h-3 text-teal-600 shrink-0" />
-          <span>{description}</span>
-        </p>
-      )}
+      <p className="text-[11px] text-slate-400 flex items-center gap-1">
+        <HardDrive className="w-3 h-3 text-teal-600 shrink-0" />
+        <span>
+          {description || `عکس در حافظه سیستم (${activeStoragePath}) ذخیره می‌شود (اگر پوشه نباشد خودکار ساخته می‌شود).`}
+        </span>
+      </p>
 
       {/* Hidden File Input */}
       <input
@@ -206,7 +224,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-100 text-teal-800 border border-teal-200">
                 <HardDrive className="w-3 h-3" />
-                ذخیره‌شده در حافظه سیستم
+                ذخیره‌شده در {activeStoragePath}
               </span>
               <span className="text-[10px] font-mono text-slate-400 truncate max-w-[200px]" dir="ltr">
                 {value.split('/').pop()}
@@ -276,10 +294,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
               <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-slate-800">
-                  در حال بارگذاری و ذخیره در پوشه /media/drshahidi...
+                  در حال بارگذاری و ذخیره در پوشه {activeStoragePath}...
                 </p>
                 <p className="text-[11px] text-slate-400">
-                  {uploadProgress > 0 ? `${uploadProgress}٪ آپلود شد` : 'در حال پردازش و ثبت روی دیسک...'}
+                  {uploadProgress > 0 ? `${uploadProgress}٪ آپلود شد` : 'در حال ساخت پوشه در صورت نبودن و ثبت فایل روی دیسک...'}
                 </p>
               </div>
               {uploadProgress > 0 && (
@@ -306,7 +324,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
               </div>
               <div className="flex items-center gap-1.5 text-[10px] text-teal-700 bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200/60">
                 <HardDrive className="w-3 h-3" />
-                <span>مسیر ذخیره‌سازی: <code className="font-mono dir-ltr">/media/drshahidi</code></span>
+                <span>مسیر ذخیره: <code className="font-mono dir-ltr">{activeStoragePath}</code> (ساخت خودکار پوشه در صورت عدم وجود)</span>
               </div>
             </div>
           )}

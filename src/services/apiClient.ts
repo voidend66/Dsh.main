@@ -385,4 +385,27 @@ export async function deleteMediaFileApi(filename: string): Promise<boolean> {
   return res.data?.success || false;
 }
 
+export interface MediaConfigResponse {
+  success: boolean;
+  currentPath: string;
+  resolvedPath?: string;
+  defaultPath: string;
+  exists: boolean;
+  writable: boolean;
+  created?: boolean;
+  totalFiles: number;
+  message?: string;
+  error?: string | null;
+}
+
+export async function getMediaConfigApi(): Promise<MediaConfigResponse> {
+  const res = await siteApi.get('/media/config');
+  return res.data;
+}
+
+export async function updateMediaConfigApi(storagePath: string): Promise<MediaConfigResponse> {
+  const res = await siteApi.post('/media/config', { storagePath });
+  return res.data;
+}
+
 
