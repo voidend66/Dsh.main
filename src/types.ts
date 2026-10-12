@@ -211,8 +211,17 @@ export interface ClinicService {
   duration: string;
   recoveryDays: string;
   estimatedTime?: string;
+  imageUrl?: string;
   iconName?: string;
   featured?: boolean;
+}
+
+export interface UploadedMediaItem {
+  filename: string;
+  url: string;
+  size: number;
+  createdAt: string;
+  isImage?: boolean;
 }
 
 export interface GalleryItem {

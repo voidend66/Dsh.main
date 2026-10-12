@@ -31,7 +31,10 @@ import {
   Zap,
   CheckCircle2,
   XCircle,
-  ArrowRight
+  ArrowRight,
+  HardDrive,
+  FolderOpen,
+  Upload
 } from 'lucide-react';
 import { 
   ArticleItem, 
@@ -71,8 +74,11 @@ import {
   deleteServiceApi,
   getGalleryApi,
   getReviewsApi,
-  getFaqsApi
+  getFaqsApi,
+  getMediaFilesApi,
+  deleteMediaFileApi
 } from '../../services/apiClient';
+import { ImageUploader } from '../ImageUploader';
 
 interface WebsiteControlTabProps {
   articles: ArticleItem[];
@@ -88,7 +94,7 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
   showToast
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'articles' | 'appointments' | 'doctor_profile' | 'services' | 'api_docs'
+    'articles' | 'appointments' | 'doctor_profile' | 'services' | 'media' | 'api_docs'
   >('articles');
 
   // Dynamic API configuration state
@@ -108,6 +114,9 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
   const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
   const [clinicHours, setClinicHours] = useState<ClinicHours | null>(null);
   const [services, setServices] = useState<ClinicService[]>([]);
+  const [mediaList, setMediaList] = useState<Array<{ filename: string; url: string; size: number; createdAt: string; isImage?: boolean }>>([]);
+  const [isLoadingMedia, setIsLoadingMedia] = useState<boolean>(false);
+  const [mediaSearch, setMediaSearch] = useState<string>('');
 
   // Search and filters
   const [articleSearch, setArticleSearch] = useState<string>('');
@@ -121,7 +130,7 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
   const [fastArtCategory, setFastArtCategory] = useState<string>('ایمپلنت دندان');
   const [fastArtReadTime, setFastArtReadTime] = useState<string>('۵ دقیقه مطالعه');
   const [fastArtSummary, setFastArtSummary] = useState<string>('');
-  const [fastArtImageUrl, setFastArtImageUrl] = useState<string>('https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=800&q=80');
+  const [fastArtImageUrl, setFastArtImageUrl] = useState<string>('');
   const [fastArtContent, setFastArtContent] = useState<string>('');
   const [isSubmittingArticle, setIsSubmittingArticle] = useState<boolean>(false);
 
@@ -141,6 +150,8 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
   const [newSrvTitle, setNewSrvTitle] = useState<string>('');
   const [newSrvCategory, setNewSrvCategory] = useState<string>('جراحی فک');
   const [newSrvDesc, setNewSrvDesc] = useState<string>('');
+  const [newSrvImageUrl, setNewSrvImageUrl] = useState<string>('');
+  const [newSrvEstimatedTime, setNewSrvEstimatedTime] = useState<string>('۱ الی ۲ جلسه');
 
   // API Tester state
   const [apiTesterEndpoint, setApiTesterEndpoint] = useState<string>('GET /articles');
@@ -176,12 +187,13 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
 
     // 2. Fetch live collections from direct API
     try {
-      const [articlesData, appointmentsData, doctorData, hoursData, servicesData] = await Promise.all([
+      const [articlesData, appointmentsData, doctorData, hoursData, servicesData, mediaData] = await Promise.all([
         getArticles(),
         getAppointments(),
         getDoctorProfile(),
         getClinicHours(),
-        getServicesApi()
+        getServicesApi(),
+        getMediaFilesApi()
       ]);
 
       setArticlesList(Array.isArray(articlesData) ? articlesData : []);
@@ -193,6 +205,7 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
       }
       if (hoursData) setClinicHours(hoursData);
       if (Array.isArray(servicesData)) setServices(servicesData);
+      if (Array.isArray(mediaData)) setMediaList(mediaData);
     } catch (err: any) {
       console.error('Error fetching live data from API:', err);
       setConnectionStatus('error');
@@ -201,6 +214,34 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
       setIsRefreshing(false);
     }
   }, []);
+
+  const handleRefreshMedia = async () => {
+    setIsLoadingMedia(true);
+    try {
+      const files = await getMediaFilesApi();
+      setMediaList(files);
+      showToast('فهرست تصاویر در /media/drshahidi به‌روزرسانی شد.');
+    } catch (err: any) {
+      showToast(`خطا در بازخوانی فایل‌های رسانه: ${err.message}`);
+    } finally {
+      setIsLoadingMedia(false);
+    }
+  };
+
+  const handleDeleteMedia = async (filename: string) => {
+    if (!window.confirm(`آیا از حذف عکس «${filename}» از مسیر /media/drshahidi اطمینان دارید؟`)) return;
+    try {
+      const ok = await deleteMediaFileApi(filename);
+      if (ok) {
+        showToast(`تصویر «${filename}» از حافظه سیستم حذف شد.`);
+        setMediaList(prev => prev.filter(m => m.filename !== filename));
+      } else {
+        showToast('خطا در حذف تصویر از سیستم.');
+      }
+    } catch (err: any) {
+      showToast(`خطا: ${err.message}`);
+    }
+  };
 
   // Run on mount
   useEffect(() => {
@@ -257,6 +298,7 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
         setFastArtTitle('');
         setFastArtSummary('');
         setFastArtContent('');
+        setFastArtImageUrl('');
         // Reload live list directly from API
         const updatedList = await getArticles();
         setArticlesList(updatedList);
@@ -362,14 +404,17 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
         title: newSrvTitle.trim(),
         category: newSrvCategory,
         description: newSrvDesc.trim(),
+        imageUrl: newSrvImageUrl.trim(),
         iconName: 'Sparkles',
-        estimatedTime: '۱ الی ۲ جلسه'
+        estimatedTime: newSrvEstimatedTime.trim() || '۱ الی ۲ جلسه'
       });
       if (created) {
-        showToast(`خدمت «${created.title}» به سایت افزوده شد.`);
+        showToast(`خدمت «${created.title}» همراه با تصویر در وب‌سایت ثبت شد.`);
         setShowAddServiceModal(false);
         setNewSrvTitle('');
         setNewSrvDesc('');
+        setNewSrvImageUrl('');
+        setNewSrvEstimatedTime('۱ الی ۲ جلسه');
         const updated = await getServicesApi();
         setServices(updated);
       }
@@ -811,6 +856,21 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveSubTab('media')}
+          className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${
+            activeSubTab === 'media'
+              ? 'border-teal-600 text-teal-700 bg-white'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <HardDrive className="w-4 h-4 text-teal-600" />
+          <span>آپلود و رسانه‌ها (/media/drshahidi)</span>
+          <span className="text-xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono">
+            {toPersianDigits(mediaList.length)}
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('api_docs')}
           className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${
             activeSubTab === 'api_docs'
@@ -1244,6 +1304,18 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
               {services.map((srv) => (
                 <div key={srv.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
                   <div>
+                    {srv.imageUrl && (
+                      <div className="w-full h-36 rounded-xl overflow-hidden mb-3 bg-slate-100">
+                        <img
+                          src={srv.imageUrl}
+                          alt={srv.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=400&q=80';
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800">
                         {srv.category}
@@ -1251,6 +1323,7 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
                       <button
                         onClick={() => handleDeleteService(srv.id, srv.title)}
                         className="text-slate-400 hover:text-rose-600"
+                        title="حذف خدمت"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1262,11 +1335,214 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
                   </div>
                   <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
                     <span>جلسات: {srv.estimatedTime || '۱ الی ۲ جلسه'}</span>
+                    {srv.imageUrl && (
+                      <span className="text-[10px] text-teal-600 font-mono" dir="ltr">
+                        {srv.imageUrl.split('/').pop()}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* -------------------------------------------------------- */}
+      {/* PANEL 5: MEDIA & FILE UPLOADS (/media/drshahidi) */}
+      {/* -------------------------------------------------------- */}
+      {activeSubTab === 'media' && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <div className="bg-gradient-to-r from-teal-900 via-slate-900 to-slate-900 text-white rounded-3xl p-6 shadow-md border border-teal-800/40">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-300 flex items-center justify-center border border-teal-400/30">
+                    <HardDrive className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-base font-bold">حافظه محلی ذخیره‌سازی تصاویر مطب (/media/drshahidi)</h3>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                  تمام تصاویری که در بخش <strong>خدمات جدید</strong> یا <strong>مقالات جدید</strong> یا مستقیماً در این پنل آپلود می‌کنید، در مسیر دائمی <code className="bg-teal-950/80 px-2 py-0.5 rounded text-teal-300 font-mono">/media/drshahidi</code> ذخیره شده و از طریق آدرس استاتیک وب‌سایت در دسترس قرار می‌گیرند.
+                </p>
+              </div>
+
+              <div className="bg-slate-800/90 border border-slate-700/80 p-4 rounded-2xl shrink-0 text-xs font-mono space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-slate-400">تعداد فایل‌های ذخیره شده:</span>
+                  <span className="text-teal-300 font-bold">{toPersianDigits(mediaList.length)} تصویر</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-slate-400">پوشه ذخیره‌سازی:</span>
+                  <span className="text-amber-300 font-bold">/media/drshahidi</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRefreshMedia}
+                  disabled={isLoadingMedia}
+                  className="w-full mt-1 px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-sans font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMedia ? 'animate-spin' : ''}`} />
+                  <span>به‌روزرسانی لیست فایل‌ها</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Direct Upload Section */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">آپلود سریع تصویر جدید به حافظه سیستم</h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  عکس را بکشید یا انتخاب کنید تا مستقیماً با نام امن در /media/drshahidi ذخیره شود.
+                </p>
+              </div>
+            </div>
+
+            <ImageUploader
+              label="فایل تصویر برای آپلود"
+              value=""
+              onChange={async (uploadedUrl) => {
+                if (uploadedUrl) {
+                  showToast(`تصویر با موفقیت در /media/drshahidi ذخیره شد: ${uploadedUrl}`);
+                  const files = await getMediaFilesApi();
+                  setMediaList(files);
+                }
+              }}
+              description="عکس بلافاصله روی دیسک سیستم ذخیره شده و آدرس وب آن برای استفاده در سایت در دسترس است."
+            />
+          </div>
+
+          {/* Media Files Gallery */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <FolderOpen className="w-5 h-5 text-teal-600" />
+                <h4 className="text-sm font-bold text-slate-900">
+                  فهرست تصاویر ذخیره‌شده ({toPersianDigits(mediaList.length)})
+                </h4>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="جستجو بر اساس نام فایل..."
+                  value={mediaSearch}
+                  onChange={(e) => setMediaSearch(e.target.value)}
+                  className="w-full pr-9 pl-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-teal-500 font-mono"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            {mediaList.length === 0 ? (
+              <div className="text-center py-12 space-y-2">
+                <HardDrive className="w-12 h-12 text-slate-300 mx-auto" />
+                <p className="text-xs font-semibold text-slate-700">هنوز تصویری در مسیر /media/drshahidi ذخیره نشده است.</p>
+                <p className="text-[11px] text-slate-400">با استفاده از فرم آپلود بالا یا هنگام افزودن خدمات و مقالات، اولین تصویر خود را ذخیره کنید.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {mediaList
+                  .filter(m => !mediaSearch.trim() || m.filename.toLowerCase().includes(mediaSearch.toLowerCase()))
+                  .map((file) => {
+                    const formattedSize = file.size > 1024 * 1024
+                      ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+                      : `${Math.round(file.size / 1024)} KB`;
+
+                    return (
+                      <div
+                        key={file.filename}
+                        className="bg-slate-50 border border-slate-200 hover:border-teal-400 rounded-2xl p-3 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="aspect-video w-full rounded-xl overflow-hidden bg-slate-900 mb-2 border border-slate-200 relative group">
+                            <img
+                              src={file.url}
+                              alt={file.filename}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=400&q=80';
+                              }}
+                            />
+                            <a
+                              href={file.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="absolute top-1.5 left-1.5 p-1 rounded-md bg-black/60 text-white hover:bg-black/90 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="مشاهده اندازه کامل"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+
+                          <p className="text-xs font-mono font-medium text-slate-800 truncate" title={file.filename} dir="ltr">
+                            {file.filename}
+                          </p>
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                            <span>{formattedSize}</span>
+                            <span>{new Date(file.createdAt).toLocaleDateString('fa-IR')}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 pt-2 border-t border-slate-200/80 flex items-center justify-between gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(file.url);
+                              showToast(`آدرس نسبی کپی شد: ${file.url}`);
+                            }}
+                            className="text-[11px] px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-teal-400 text-slate-700 font-medium flex items-center gap-1 shadow-2xs transition-colors"
+                            title="کپی آدرس نسبی (/media/drshahidi/...)"
+                          >
+                            <Copy className="w-3 h-3 text-teal-600" />
+                            <span>کپی لینک</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMedia(file.filename)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            title="حذف از دیسک"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+
+          {/* Integration Guide for External Site */}
+          <div className="bg-slate-900 text-slate-200 rounded-3xl p-6 shadow-sm border border-slate-800 space-y-4">
+            <div className="flex items-center gap-2 text-teal-400">
+              <Code className="w-5 h-5" />
+              <h4 className="text-sm font-bold text-white">راهنمای نحوه اتصال و استفاده از تصاویر در وب‌سایت اصلی</h4>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed text-slate-300">
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <span className="font-bold text-teal-300 block">۱. اگر فرانت‌اند روی همین سرور ران است:</span>
+                <p>نیازی به هیچ تغییری ندارید؛ تصویر مستقیماً از مسیر زیر در تگ HTML قابل فراخوانی است:</p>
+                <code className="block bg-slate-900 p-2 rounded-lg font-mono text-amber-300 dir-ltr text-left">
+                  {`<img src="/media/drshahidi/example.jpg" alt="خدمت" />`}
+                </code>
+              </div>
+
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <span className="font-bold text-teal-300 block">۲. اگر وب‌سایت از سرور یا پورت دیگری اجرا می‌شود:</span>
+                <p>آدرس کامل سرور را در ابتدای مسیر قرار دهید:</p>
+                <code className="block bg-slate-900 p-2 rounded-lg font-mono text-emerald-300 dir-ltr text-left">
+                  {`<img src="${customApiUrl.replace('/api', '')}/media/drshahidi/example.jpg" />`}
+                </code>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1571,13 +1847,11 @@ echo $response;
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">آدرس عکس شاخص (heroImage):</label>
-                <input
-                  type="text"
+                <ImageUploader
+                  label="عکس شاخص مقاله (heroImage / ذخیره خودکار در /media/drshahidi)"
                   value={fastArtImageUrl}
-                  onChange={(e) => setFastArtImageUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:border-teal-500 dir-ltr text-left font-mono"
+                  onChange={setFastArtImageUrl}
+                  description="فایل انتخابی مستقیماً در حافظه سیستم /media/drshahidi ذخیره و به وب‌سایت متصل می‌شود."
                 />
               </div>
 
@@ -1783,6 +2057,26 @@ echo $response;
                   value={newSrvDesc}
                   onChange={(e) => setNewSrvDesc(e.target.value)}
                   placeholder="توضیح جهت نمایش در کارت خدمت وب‌سایت..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <ImageUploader
+                  label="عکس اختصاصی خدمت (بارگذاری در /media/drshahidi)"
+                  value={newSrvImageUrl}
+                  onChange={setNewSrvImageUrl}
+                  description="عکس به طور مستقیم در /media/drshahidi ذخیره و به وب‌سایت متصل می‌شود."
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">مدت زمان و تعداد جلسات تقریبی (estimatedTime):</label>
+                <input
+                  type="text"
+                  value={newSrvEstimatedTime}
+                  onChange={(e) => setNewSrvEstimatedTime(e.target.value)}
+                  placeholder="مثال: ۱ الی ۲ جلسه"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-500"
                 />
               </div>

@@ -332,3 +332,57 @@ export async function deleteLeadApi(id: string): Promise<boolean> {
   return res.status === 200 || res.status === 204;
 }
 
+// ==========================================
+// 9. MEDIA & FILE UPLOAD (/media/drshahidi)
+// ==========================================
+export interface UploadResponse {
+  success: boolean;
+  message: string;
+  url: string;
+  fullUrl: string;
+  filename: string;
+  originalName: string;
+  size: number;
+  mimetype: string;
+  storagePath: string;
+}
+
+export async function uploadImageApi(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const res = await siteApi.post('/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    onUploadProgress: (progressEvent) => {
+      if (progressEvent.total && onProgress) {
+        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onProgress(percent);
+      }
+    }
+  });
+
+  return res.data;
+}
+
+export async function getMediaFilesApi(): Promise<Array<{
+  filename: string;
+  url: string;
+  size: number;
+  createdAt: string;
+  isImage: boolean;
+}>> {
+  const res = await siteApi.get('/media');
+  return res.data?.files || [];
+}
+
+export async function deleteMediaFileApi(filename: string): Promise<boolean> {
+  const res = await siteApi.delete(`/media/${encodeURIComponent(filename)}`);
+  return res.data?.success || false;
+}
+
+

@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import path from "path";
 import fs from "fs";
+import multer from "multer";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 
@@ -10,6 +11,53 @@ dotenv.config();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const DB_FILE = path.join(process.cwd(), "data", "db.json");
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "dr-shahidi-key-2026";
+
+// Media storage directory configuration: User specified storage path /media/drshahidi
+const MEDIA_DIR = "/media/drshahidi";
+try {
+  if (!fs.existsSync(MEDIA_DIR)) {
+    fs.mkdirSync(MEDIA_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.warn("Notice: /media/drshahidi directory initialization:", err);
+}
+
+// Multer disk storage engine to save files directly into /media/drshahidi
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    try {
+      if (!fs.existsSync(MEDIA_DIR)) {
+        fs.mkdirSync(MEDIA_DIR, { recursive: true });
+      }
+      cb(null, MEDIA_DIR);
+    } catch (err: any) {
+      cb(err, MEDIA_DIR);
+    }
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
+    const cleanBase = path.basename(file.originalname, ext)
+      .toLowerCase()
+      .replace(/[^a-z0-9\u0600-\u06FF_-]/g, "-")
+      .slice(0, 35);
+    const uniqueSuffix = `${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    cb(null, `${cleanBase || 'shahidi'}-${uniqueSuffix}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 30 * 1024 * 1024 // 30 MB maximum file size
+  },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/") || /\.(jpg|jpeg|png|webp|svg|gif|avif)$/i.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      cb(new Error("تنها فایل‌های تصویری (JPG, PNG, WEBP, SVG, GIF, AVIF) مجاز هستند."));
+    }
+  }
+});
 
 interface DatabaseSchema {
   doctor: any;
@@ -125,8 +173,12 @@ async function startServer() {
     })
   );
 
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+  // Static serving for media uploads directly from host storage (/media/drshahidi)
+  app.use("/media/drshahidi", express.static(MEDIA_DIR, { maxAge: "7d" }));
+  app.use("/media", express.static(MEDIA_DIR, { maxAge: "7d" }));
 
   // Request logger for API calls
   app.use("/api", (req, _res, next) => {
@@ -201,9 +253,113 @@ async function startServer() {
           "POST /api/faqs": "افزودن سوال و پاسخ (نیازمند x-api-key)",
           "PUT /api/faqs/:id": "ویرایش سوال (نیازمند x-api-key)",
           "DELETE /api/faqs/:id": "حذف سوال (نیازمند x-api-key)"
+        },
+        media: {
+          "POST /api/upload": "آپلود مستقیم عکس در سیستم (/media/drshahidi) با فرمت multipart/form-data و کلید image یا file",
+          "GET /api/media": "مشاهده لیست تصاویر و رسانه‌های ذخیره‌شده در /media/drshahidi",
+          "DELETE /api/media/:filename": "حذف تصویر از حافظه سیستم (نیازمند x-api-key)"
         }
       }
     });
+  });
+
+  // ==========================================
+  // MEDIA UPLOAD & STORAGE ENDPOINTS (/media/drshahidi)
+  // ==========================================
+  app.post("/api/upload", (req, res) => {
+    upload.single("image")(req, res, (err) => {
+      if (err) {
+        if (err instanceof multer.MulterError) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(400).json({ success: false, error: "حجم فایل بیش از سقف مجاز (۳۰ مگابایت) است." });
+          }
+          return res.status(400).json({ success: false, error: `خطای بارگذاری فایل: ${err.message}` });
+        }
+        return res.status(400).json({ success: false, error: err.message || "خطا در پردازش تصویر" });
+      }
+
+      // If file wasn't sent under 'image', check if it was sent under 'file'
+      const uploadedFile = req.file;
+      if (!uploadedFile) {
+        return res.status(400).json({
+          success: false,
+          error: "هیچ فایلی ارسال نشده است. لطفاً فایل عکس را با فیلد 'image' ارسال نمایید."
+        });
+      }
+
+      const host = req.get("host") || `localhost:${PORT}`;
+      const protocol = req.protocol || "http";
+      const relativeUrl = `/media/drshahidi/${uploadedFile.filename}`;
+      const fullUrl = `${protocol}://${host}${relativeUrl}`;
+
+      console.log(`[MEDIA UPLOAD] Successfully stored: ${uploadedFile.filename} in ${MEDIA_DIR} (${uploadedFile.size} bytes)`);
+
+      return res.status(200).json({
+        success: true,
+        message: "تصویر با موفقیت در حافظه سیستم (/media/drshahidi) ذخیره گردید.",
+        url: relativeUrl,
+        fullUrl,
+        filename: uploadedFile.filename,
+        originalName: uploadedFile.originalname,
+        size: uploadedFile.size,
+        mimetype: uploadedFile.mimetype,
+        storagePath: path.join(MEDIA_DIR, uploadedFile.filename)
+      });
+    });
+  });
+
+  app.get("/api/media", (_req, res) => {
+    try {
+      if (!fs.existsSync(MEDIA_DIR)) {
+        return res.json({ success: true, mediaDir: MEDIA_DIR, count: 0, files: [] });
+      }
+
+      const fileNames = fs.readdirSync(MEDIA_DIR).filter(f => !f.startsWith("."));
+      const files = fileNames
+        .map(filename => {
+          try {
+            const filePath = path.join(MEDIA_DIR, filename);
+            const stats = fs.statSync(filePath);
+            return {
+              filename,
+              url: `/media/drshahidi/${filename}`,
+              size: stats.size,
+              createdAt: stats.birthtime || stats.mtime,
+              isImage: /\.(jpg|jpeg|png|webp|svg|gif|avif)$/i.test(filename)
+            };
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      return res.json({
+        success: true,
+        mediaDir: MEDIA_DIR,
+        count: files.length,
+        files
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete("/api/media/:filename", requireApiKey, (req, res) => {
+    try {
+      const filename = path.basename(req.params.filename);
+      const filePath = path.join(MEDIA_DIR, filename);
+
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[MEDIA DELETE] Deleted ${filePath}`);
+        return res.json({ success: true, message: `فایل ${filename} با موفقیت حذف شد.` });
+      }
+
+      return res.status(404).json({ success: false, error: "فایل تصویر در حافظه یافت نشد." });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   // ==========================================
@@ -680,7 +836,7 @@ async function startServer() {
 
   app.post("/api/services", requireApiKey, (req, res) => {
     const db = readDb();
-    const { title, category, description, duration, recoveryDays, featured } = req.body;
+    const { title, category, description, duration, recoveryDays, featured, imageUrl, iconName, estimatedTime } = req.body;
 
     if (!title) {
       res.status(400).json({ success: false, error: "عنوان خدمت الزامی است." });
@@ -692,6 +848,9 @@ async function startServer() {
       title,
       category: category || "جراحی فک",
       description: description || "",
+      imageUrl: imageUrl || "",
+      iconName: iconName || "Sparkles",
+      estimatedTime: estimatedTime || "۱ الی ۲ جلسه",
       duration: duration || "۳۰ دقیقه",
       recoveryDays: recoveryDays || "۳ روز",
       featured: featured !== undefined ? featured : true
