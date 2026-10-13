@@ -262,8 +262,112 @@ function requireApiKey(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
+// Helper to determine the public origin (protocol + host)
+function getPublicOrigin(req?: Request): string {
+  try {
+    const db = readDb();
+    const custom = db.settings?.publicMediaUrl;
+    if (custom && typeof custom === "string" && custom.trim()) {
+      return custom.trim().replace(/\/+$/, "");
+    }
+  } catch {
+    // fallback
+  }
+
+  if (process.env.PUBLIC_MEDIA_URL && process.env.PUBLIC_MEDIA_URL.trim()) {
+    return process.env.PUBLIC_MEDIA_URL.trim().replace(/\/+$/, "");
+  }
+
+  if (req) {
+    const host = req.get("x-forwarded-host") || req.get("host") || `localhost:${PORT}`;
+    const protoHeader = req.headers["x-forwarded-proto"] as string;
+    const isHttps = protoHeader === "https" || req.secure || host.includes("run.app") || (!host.includes("localhost") && !host.includes("127.0.0.1") && !host.includes(":"));
+    const protocol = isHttps ? "https" : (req.protocol || "http");
+    return `${protocol}://${host}`;
+  }
+
+  return `http://localhost:${PORT}`;
+}
+
+// Helper to convert any relative media path to an absolute HTTPS URL using current request host or configured public domain
+function toAbsoluteMediaUrl(req: Request | undefined, urlStr?: string): string {
+  if (!urlStr || typeof urlStr !== "string") return "";
+  const trimmed = urlStr.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+  const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const origin = getPublicOrigin(req);
+  return `${origin}${cleanPath}`;
+}
+
+function normalizeArticleImages(req: Request, article: any): any {
+  if (!article) return article;
+  const rawImg = article.featuredImage || article.heroImage || article.imageUrl || article.image || "";
+  const absUrl = toAbsoluteMediaUrl(req, rawImg);
+  const relUrl = rawImg.startsWith("http") ? rawImg : (rawImg.startsWith("/") ? rawImg : `/${rawImg}`);
+
+  return {
+    ...article,
+    featuredImage: absUrl || rawImg,
+    heroImage: absUrl || rawImg,
+    imageUrl: absUrl || rawImg,
+    image: absUrl || rawImg,
+    thumbnail: absUrl || rawImg,
+    cover: absUrl || rawImg,
+    relativeImageUrl: relUrl,
+    absoluteImageUrl: absUrl
+  };
+}
+
+function normalizeServiceImages(req: Request, service: any): any {
+  if (!service) return service;
+  const rawImg = service.imageUrl || service.image || service.featuredImage || "";
+  const absUrl = toAbsoluteMediaUrl(req, rawImg);
+  const relUrl = rawImg.startsWith("http") ? rawImg : (rawImg.startsWith("/") ? rawImg : `/${rawImg}`);
+
+  return {
+    ...service,
+    imageUrl: absUrl || rawImg,
+    image: absUrl || rawImg,
+    featuredImage: absUrl || rawImg,
+    thumbnail: absUrl || rawImg,
+    relativeImageUrl: relUrl,
+    absoluteImageUrl: absUrl
+  };
+}
+
+function normalizeDoctorImages(req: Request, doctor: any): any {
+  if (!doctor) return doctor;
+  const rawImg = doctor.portraitUrl || doctor.imageUrl || doctor.image || "";
+  const absUrl = toAbsoluteMediaUrl(req, rawImg);
+
+  return {
+    ...doctor,
+    portraitUrl: absUrl || rawImg,
+    imageUrl: absUrl || rawImg,
+    image: absUrl || rawImg,
+    absoluteImageUrl: absUrl
+  };
+}
+
+function normalizeGalleryImages(req: Request, item: any): any {
+  if (!item) return item;
+  const absBefore = toAbsoluteMediaUrl(req, item.beforeImageUrl);
+  const absAfter = toAbsoluteMediaUrl(req, item.afterImageUrl);
+
+  return {
+    ...item,
+    beforeImageUrl: absBefore || item.beforeImageUrl,
+    afterImageUrl: absAfter || item.afterImageUrl,
+    imageUrl: absAfter || absBefore || item.afterImageUrl || item.beforeImageUrl
+  };
+}
+
 async function startServer() {
   const app = express();
+  app.set("trust proxy", true);
 
   // 1. Enable CORS for all external origins, frameworks and domains
   app.use(
@@ -292,12 +396,16 @@ async function startServer() {
     const candidatePaths = [
       path.join(activeDir, filename),
       path.join(DEFAULT_MEDIA_DIR, filename),
-      path.join(process.cwd(), "media", "drshahidi", filename)
+      path.join(process.cwd(), "media", "drshahidi", filename),
+      path.join(process.cwd(), "media", filename)
     ];
 
     for (const filePath of candidatePaths) {
       try {
         if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+          res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
           return res.sendFile(filePath, { maxAge: "7d" });
         }
       } catch {
@@ -309,6 +417,7 @@ async function startServer() {
 
   app.use("/media/drshahidi", serveMediaFile);
   app.use("/media", serveMediaFile);
+  app.use("/api/media/files", serveMediaFile);
 
   // Request logger for API calls
   app.use("/api", (req, _res, next) => {
@@ -400,7 +509,7 @@ async function startServer() {
   // ==========================================
 
   // 1. Get current storage configuration and directory status
-  app.get(["/api/media/config", "/media/config"], (_req, res) => {
+  app.get(["/api/media/config", "/media/config"], (req, res) => {
     try {
       const activeDir = getActiveMediaDir();
       const status = ensureDirectoryReady(activeDir);
@@ -413,11 +522,18 @@ async function startServer() {
         totalFiles = 0;
       }
 
+      const db = readDb();
+      const publicMediaUrl = db.settings?.publicMediaUrl || "";
+      const publicOrigin = getPublicOrigin(req);
+
       return res.json({
         success: true,
         currentPath: activeDir,
         resolvedPath: status.resolvedPath,
         defaultPath: DEFAULT_MEDIA_DIR,
+        publicMediaUrl,
+        publicOrigin,
+        samplePublicUrl: `${publicOrigin}/media/drshahidi/sample.jpg`,
         exists: status.exists,
         writable: status.writable,
         created: status.created,
@@ -429,29 +545,44 @@ async function startServer() {
     }
   });
 
-  // 2. Change storage path manually and auto-create directory if it doesn't exist
+  // 2. Change storage path or public URL manually and auto-create directory if it doesn't exist
   app.post(["/api/media/config", "/media/config"], (req, res) => {
     try {
-      const storagePath = req.body?.storagePath || req.body?.path || req.body?.dir || req.body?.mediaStorageDir || DEFAULT_MEDIA_DIR;
-      const cleanPath = (typeof storagePath === "string" && storagePath.trim()) ? storagePath.trim() : DEFAULT_MEDIA_DIR;
-
-      const status = ensureDirectoryReady(cleanPath);
-
-      // Persist in db.json settings
       const db = readDb();
       if (!db.settings) db.settings = {};
-      db.settings.mediaStorageDir = status.resolvedPath || cleanPath;
+
+      const storagePath = req.body?.storagePath || req.body?.path || req.body?.dir || req.body?.mediaStorageDir;
+      let status = ensureDirectoryReady(getActiveMediaDir());
+
+      if (storagePath && typeof storagePath === "string" && storagePath.trim()) {
+        const cleanPath = storagePath.trim();
+        status = ensureDirectoryReady(cleanPath);
+        db.settings.mediaStorageDir = status.resolvedPath || cleanPath;
+      }
+
+      if (req.body?.publicMediaUrl !== undefined) {
+        const pUrl = typeof req.body.publicMediaUrl === "string" ? req.body.publicMediaUrl.trim() : "";
+        db.settings.publicMediaUrl = pUrl.replace(/\/+$/, "");
+      }
+
       writeDb(db);
 
-      console.log(`[STORAGE CONFIG] Media directory set to: ${cleanPath} (Auto-created: ${status.created}, Writable: ${status.writable})`);
+      const activeDir = getActiveMediaDir();
+      const publicOrigin = getPublicOrigin(req);
+      const publicMediaUrl = db.settings.publicMediaUrl || "";
+
+      console.log(`[STORAGE CONFIG] Config updated. Directory: ${activeDir}, Public origin: ${publicOrigin}`);
 
       return res.json({
         success: true,
         message: status.created 
-          ? `مسیر «${cleanPath}» وجود نداشت و به‌صورت خودکار توسط سیستم ایجاد گردید و آماده ذخیره‌سازی است.`
-          : `مسیر «${cleanPath}» با موفقیت به‌عنوان پوشه ذخیره‌سازی تصاویر ثبت گردید.`,
-        currentPath: status.resolvedPath || cleanPath,
+          ? `مسیر «${activeDir}» وجود نداشت و به‌صورت خودکار ایجاد گردید. تنظیمات لینک عمومی مستقیم نیز ذخیره شد.`
+          : `تنظیمات ذخیره‌سازی و لینک عمومی مستقیم تصاویر با موفقیت ذخیره گردید.`,
+        currentPath: status.resolvedPath || activeDir,
         resolvedPath: status.resolvedPath,
+        publicMediaUrl,
+        publicOrigin,
+        samplePublicUrl: `${publicOrigin}/media/drshahidi/example.jpg`,
         created: status.created,
         exists: status.exists,
         writable: status.writable
@@ -495,10 +626,8 @@ async function startServer() {
       const storagePath = path.join(activeDir, filename);
       fs.writeFileSync(storagePath, buffer);
 
-      const host = req.get("host") || `localhost:${PORT}`;
-      const protocol = req.protocol || "http";
       const relativeUrl = `/media/drshahidi/${filename}`;
-      const fullUrl = `${protocol}://${host}${relativeUrl}`;
+      const fullUrl = toAbsoluteMediaUrl(req, relativeUrl);
 
       return {
         filename,
@@ -535,13 +664,16 @@ async function startServer() {
         const rawName = String(req.body.filename || req.body.originalName || req.body.name || 'upload.jpg');
         const saved = saveBufferToFile(buffer, rawName, detectedMime);
 
-        console.log(`[MEDIA UPLOAD (BASE64)] Successfully stored: ${saved.filename} in ${saved.activeDir} (${saved.size} bytes)`);
+        console.log(`[MEDIA UPLOAD (BASE64)] Successfully stored: ${saved.filename} in ${saved.activeDir} (${saved.size} bytes) -> Public URL: ${saved.fullUrl}`);
 
         return res.status(200).json({
           success: true,
-          message: `تصویر با موفقیت در حافظه سیستم (${saved.activeDir}) ذخیره گردید.`,
-          url: saved.relativeUrl,
+          message: `تصویر با موفقیت در حافظه سیستم ذخیره گردید و لینک عمومی مستقیم ساخته شد.`,
+          url: saved.fullUrl,
           fullUrl: saved.fullUrl,
+          publicUrl: saved.fullUrl,
+          directUrl: saved.fullUrl,
+          relativeUrl: saved.relativeUrl,
           filename: saved.filename,
           originalName: saved.originalName,
           size: saved.size,
@@ -568,9 +700,12 @@ async function startServer() {
             const saved = saveBufferToFile(buffer, req.body.filename || 'upload.jpg', 'image/jpeg');
             return res.status(200).json({
               success: true,
-              message: `تصویر با موفقیت در حافظه سیستم (${saved.activeDir}) ذخیره گردید.`,
-              url: saved.relativeUrl,
+              message: `تصویر با موفقیت در حافظه سیستم ذخیره گردید و لینک عمومی مستقیم ساخته شد.`,
+              url: saved.fullUrl,
               fullUrl: saved.fullUrl,
+              publicUrl: saved.fullUrl,
+              directUrl: saved.fullUrl,
+              relativeUrl: saved.relativeUrl,
               filename: saved.filename,
               size: saved.size,
               storagePath: saved.storagePath,
@@ -596,9 +731,12 @@ async function startServer() {
             const saved = saveBufferToFile(buffer, req.body.filename || 'upload.jpg', 'image/jpeg');
             return res.status(200).json({
               success: true,
-              message: `تصویر با موفقیت در حافظه سیستم (${saved.activeDir}) ذخیره گردید.`,
-              url: saved.relativeUrl,
+              message: `تصویر با موفقیت در حافظه سیستم ذخیره گردید و لینک عمومی مستقیم ساخته شد.`,
+              url: saved.fullUrl,
               fullUrl: saved.fullUrl,
+              publicUrl: saved.fullUrl,
+              directUrl: saved.fullUrl,
+              relativeUrl: saved.relativeUrl,
               filename: saved.filename,
               size: saved.size,
               storagePath: saved.storagePath,
@@ -616,18 +754,19 @@ async function startServer() {
       }
 
       const activeDir = uploadedFile.destination || getActiveMediaDir();
-      const host = req.get("host") || `localhost:${PORT}`;
-      const protocol = req.protocol || "http";
       const relativeUrl = `/media/drshahidi/${uploadedFile.filename}`;
-      const fullUrl = `${protocol}://${host}${relativeUrl}`;
+      const fullUrl = toAbsoluteMediaUrl(req, relativeUrl);
 
-      console.log(`[MEDIA UPLOAD] Successfully stored: ${uploadedFile.filename} in ${activeDir} (${uploadedFile.size} bytes)`);
+      console.log(`[MEDIA UPLOAD] Successfully stored: ${uploadedFile.filename} in ${activeDir} (${uploadedFile.size} bytes) -> Public URL: ${fullUrl}`);
 
       return res.status(200).json({
         success: true,
-        message: `تصویر با موفقیت در حافظه سیستم (${activeDir}) ذخیره گردید.`,
-        url: relativeUrl,
+        message: `تصویر با موفقیت در حافظه سیستم ذخیره گردید و لینک عمومی مستقیم ساخته شد.`,
+        url: fullUrl,
         fullUrl,
+        publicUrl: fullUrl,
+        directUrl: fullUrl,
+        relativeUrl,
         filename: uploadedFile.filename,
         originalName: uploadedFile.originalname,
         size: uploadedFile.size,
@@ -639,7 +778,7 @@ async function startServer() {
   });
 
   // 4. List all media files in the active storage directory
-  app.get(["/api/media", "/media/list", "/api/media/files"], (_req, res) => {
+  app.get(["/api/media", "/media/list", "/api/media/files"], (req, res) => {
     try {
       const activeDir = getActiveMediaDir();
       if (!fs.existsSync(activeDir)) {
@@ -655,9 +794,14 @@ async function startServer() {
           try {
             const filePath = path.join(activeDir, filename);
             const stats = fs.statSync(filePath);
+            const relativeUrl = `/media/drshahidi/${filename}`;
+            const fullUrl = toAbsoluteMediaUrl(req, relativeUrl);
             return {
               filename,
-              url: `/media/drshahidi/${filename}`,
+              url: fullUrl,
+              fullUrl,
+              publicUrl: fullUrl,
+              relativeUrl,
               size: stats.size,
               createdAt: stats.birthtime || stats.mtime,
               isImage: /\.(jpg|jpeg|png|webp|svg|gif|avif)$/i.test(filename)
@@ -738,10 +882,11 @@ async function startServer() {
       articles = articles.filter(a => a.status === status);
     }
 
+    const normalizedArticles = articles.map(a => normalizeArticleImages(req, a));
     res.json({
       success: true,
-      count: articles.length,
-      data: articles
+      count: normalizedArticles.length,
+      data: normalizedArticles
     });
   });
 
@@ -759,7 +904,7 @@ async function startServer() {
     article.views = (article.views || 0) + 1;
     writeDb(db);
 
-    res.json({ success: true, data: article });
+    res.json({ success: true, data: normalizeArticleImages(req, article) });
   });
 
   app.post("/api/articles", requireApiKey, (req, res) => {
@@ -776,6 +921,8 @@ async function startServer() {
       content, 
       featuredImage, 
       heroImage,
+      imageUrl,
+      image,
       sections,
       author 
     } = req.body;
@@ -788,6 +935,9 @@ async function startServer() {
     const calculatedReadTimeMin = typeof readTimeMin === "number" 
       ? readTimeMin 
       : (typeof readTime === "string" ? parseInt(readTime, 10) || 5 : 5);
+
+    const rawImg = heroImage || featuredImage || imageUrl || image || "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=800&q=80";
+    const publicImg = toAbsoluteMediaUrl(req, rawImg);
 
     const newArticle = {
       id: `art-${Date.now()}`,
@@ -806,17 +956,21 @@ async function startServer() {
       content: content || (Array.isArray(sections) && sections.length > 0 ? sections.map((s: any) => `${s.title ? `## ${s.title}\n` : ''}${Array.isArray(s.paragraphs) ? s.paragraphs.join('\n\n') : ''}`).join('\n\n') : ""),
       sections: sections || [],
       author: author || "دکتر اکبر شهیدی پیام",
-      featuredImage: heroImage || featuredImage || "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=800&q=80",
-      heroImage: heroImage || featuredImage || "https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=800&q=80"
+      featuredImage: publicImg,
+      heroImage: publicImg,
+      imageUrl: publicImg,
+      image: publicImg
     };
 
     db.articles = [newArticle, ...(db.articles || [])];
     writeDb(db);
 
+    const responseArticle = normalizeArticleImages(req, newArticle);
+
     res.status(201).json({
       success: true,
       message: "مقاله با موفقیت ایجاد گردید.",
-      data: newArticle
+      data: responseArticle
     });
   });
 
@@ -836,13 +990,20 @@ async function startServer() {
       id // preserve ID
     };
 
+    if (updated.featuredImage) updated.featuredImage = toAbsoluteMediaUrl(req, updated.featuredImage);
+    if (updated.heroImage) updated.heroImage = toAbsoluteMediaUrl(req, updated.heroImage);
+    if (updated.imageUrl) updated.imageUrl = toAbsoluteMediaUrl(req, updated.imageUrl);
+    if (updated.image) updated.image = toAbsoluteMediaUrl(req, updated.image);
+
     db.articles[index] = updated;
     writeDb(db);
+
+    const responseUpdated = normalizeArticleImages(req, updated);
 
     res.json({
       success: true,
       message: "مقاله با موفقیت به‌روزرسانی شد.",
-      data: updated
+      data: responseUpdated
     });
   });
 
@@ -864,26 +1025,32 @@ async function startServer() {
   // ==========================================
   // 2. DOCTOR PROFILE ENDPOINTS
   // ==========================================
-  app.get("/api/doctor", (_req, res) => {
+  app.get("/api/doctor", (req, res) => {
     const db = readDb();
     res.json({
       success: true,
-      data: db.doctor || {}
+      data: normalizeDoctorImages(req, db.doctor || {})
     });
   });
 
   app.put("/api/doctor", requireApiKey, (req, res) => {
     const db = readDb();
-    db.doctor = {
+    const updated = {
       ...(db.doctor || {}),
       ...req.body
     };
+
+    if (updated.portraitUrl) updated.portraitUrl = toAbsoluteMediaUrl(req, updated.portraitUrl);
+    if (updated.imageUrl) updated.imageUrl = toAbsoluteMediaUrl(req, updated.imageUrl);
+    if (updated.image) updated.image = toAbsoluteMediaUrl(req, updated.image);
+
+    db.doctor = updated;
     writeDb(db);
 
     res.json({
       success: true,
       message: "اطلاعات و مشخصات دکتر با موفقیت به‌روزرسانی شد.",
-      data: db.doctor
+      data: normalizeDoctorImages(req, db.doctor)
     });
   });
 
@@ -1172,30 +1339,35 @@ async function startServer() {
   // ==========================================
   // 5. SERVICES ENDPOINTS
   // ==========================================
-  app.get("/api/services", (_req, res) => {
+  app.get("/api/services", (req, res) => {
     const db = readDb();
+    const normalizedServices = (db.services || []).map(s => normalizeServiceImages(req, s));
     res.json({
       success: true,
-      count: (db.services || []).length,
-      data: db.services || []
+      count: normalizedServices.length,
+      data: normalizedServices
     });
   });
 
   app.post("/api/services", requireApiKey, (req, res) => {
     const db = readDb();
-    const { title, category, description, duration, recoveryDays, featured, imageUrl, iconName, estimatedTime } = req.body;
+    const { title, category, description, duration, recoveryDays, featured, imageUrl, image, iconName, estimatedTime } = req.body;
 
     if (!title) {
       res.status(400).json({ success: false, error: "عنوان خدمت الزامی است." });
       return;
     }
 
+    const rawImg = imageUrl || image || req.body.featuredImage || "";
+    const publicImg = toAbsoluteMediaUrl(req, rawImg);
+
     const newService = {
       id: `srv-${Date.now()}`,
       title,
       category: category || "جراحی فک",
       description: description || "",
-      imageUrl: imageUrl || "",
+      imageUrl: publicImg,
+      image: publicImg,
       iconName: iconName || "Sparkles",
       estimatedTime: estimatedTime || "۱ الی ۲ جلسه",
       duration: duration || "۳۰ دقیقه",
@@ -1206,10 +1378,12 @@ async function startServer() {
     db.services = [...(db.services || []), newService];
     writeDb(db);
 
+    const responseService = normalizeServiceImages(req, newService);
+
     res.status(201).json({
       success: true,
       message: "خدمت جدید ثبت شد.",
-      data: newService
+      data: responseService
     });
   });
 
@@ -1223,13 +1397,19 @@ async function startServer() {
       return;
     }
 
-    db.services[index] = { ...db.services[index], ...req.body, id };
+    const updated = { ...db.services[index], ...req.body, id };
+    if (updated.imageUrl) updated.imageUrl = toAbsoluteMediaUrl(req, updated.imageUrl);
+    if (updated.image) updated.image = toAbsoluteMediaUrl(req, updated.image);
+
+    db.services[index] = updated;
     writeDb(db);
+
+    const responseService = normalizeServiceImages(req, db.services[index]);
 
     res.json({
       success: true,
       message: "خدمت به‌روزرسانی شد.",
-      data: db.services[index]
+      data: responseService
     });
   });
 
@@ -1244,12 +1424,13 @@ async function startServer() {
   // ==========================================
   // 6. GALLERY (BEFORE & AFTER) ENDPOINTS
   // ==========================================
-  app.get("/api/gallery", (_req, res) => {
+  app.get("/api/gallery", (req, res) => {
     const db = readDb();
+    const normalizedGallery = (db.gallery || []).map(g => normalizeGalleryImages(req, g));
     res.json({
       success: true,
-      count: (db.gallery || []).length,
-      data: db.gallery || []
+      count: normalizedGallery.length,
+      data: normalizedGallery
     });
   });
 
@@ -1266,8 +1447,8 @@ async function startServer() {
       id: `gal-${Date.now()}`,
       title,
       category: category || "جراحی ارتوگناتیک",
-      beforeImageUrl,
-      afterImageUrl,
+      beforeImageUrl: toAbsoluteMediaUrl(req, beforeImageUrl),
+      afterImageUrl: toAbsoluteMediaUrl(req, afterImageUrl),
       patientAgeGender: patientAgeGender || "",
       procedureDuration: procedureDuration || "",
       description: description || ""
@@ -1279,7 +1460,7 @@ async function startServer() {
     res.status(201).json({
       success: true,
       message: "نمونه‌کار قبل و بعد ثبت شد.",
-      data: newItem
+      data: normalizeGalleryImages(req, newItem)
     });
   });
 

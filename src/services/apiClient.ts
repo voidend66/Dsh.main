@@ -161,7 +161,10 @@ export async function createArticleFromPanel(formData: {
     category: formData.category || 'ایمپلنت دندان',
     readTime: formData.readTime || '۵ دقیقه مطالعه',
     summary: formData.summary,
+    featuredImage: formData.imageUrl,
     heroImage: formData.imageUrl,
+    imageUrl: formData.imageUrl,
+    image: formData.imageUrl,
     sections: [
       {
         title: 'مقدمه و توضیحات',
@@ -269,8 +272,14 @@ export async function getServicesApi(): Promise<ClinicService[]> {
   return res.data?.data || [];
 }
 
-export async function createServiceApi(srv: Partial<ClinicService>): Promise<ClinicService> {
-  const res = await siteApi.post('/services', srv);
+export async function createServiceApi(srv: Partial<ClinicService> & { image?: string; featuredImage?: string }): Promise<ClinicService> {
+  const payload = {
+    ...srv,
+    imageUrl: srv.imageUrl || srv.image,
+    image: srv.imageUrl || srv.image,
+    featuredImage: srv.imageUrl || srv.image
+  };
+  const res = await siteApi.post('/services', payload);
   return res.data?.data;
 }
 
@@ -346,11 +355,32 @@ export interface UploadResponse {
   message: string;
   url: string;
   fullUrl: string;
+  publicUrl?: string;
+  directUrl?: string;
+  relativeUrl?: string;
   filename: string;
   originalName: string;
   size: number;
   mimetype: string;
   storagePath: string;
+}
+
+export function toPublicMediaUrl(pathOrUrl?: string): string {
+  if (!pathOrUrl || typeof pathOrUrl !== 'string') return '';
+  const trimmed = pathOrUrl.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+  const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  const customApi = getApiBaseUrl();
+  if (customApi.startsWith('http://') || customApi.startsWith('https://')) {
+    const origin = customApi.replace(/\/api\/?$/, '');
+    return `${origin}${cleanPath}`;
+  }
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return `${window.location.origin}${cleanPath}`;
+  }
+  return cleanPath;
 }
 
 export function fileToBase64(file: File): Promise<string> {
@@ -391,17 +421,25 @@ export async function uploadImageApi(
         try {
           const json = JSON.parse(xhr.responseText);
           if (xhr.status >= 200 && xhr.status < 300 && json.success) {
-            resolve(json);
+            const publicUrl = toPublicMediaUrl(json.fullUrl || json.url || `/media/drshahidi/${file.name}`);
+            resolve({
+              ...json,
+              url: publicUrl,
+              fullUrl: publicUrl,
+              publicUrl
+            });
           } else {
             reject(new Error(json.error || `خطای آپلود با کد وضعیت ${xhr.status}`));
           }
         } catch {
           if (xhr.status >= 200 && xhr.status < 300) {
+            const publicUrl = toPublicMediaUrl(`/media/drshahidi/${file.name}`);
             resolve({
               success: true,
               message: 'فایل با موفقیت ذخیره شد.',
-              url: `/media/drshahidi/${file.name}`,
-              fullUrl: `/media/drshahidi/${file.name}`,
+              url: publicUrl,
+              fullUrl: publicUrl,
+              publicUrl,
               filename: file.name,
               originalName: file.name,
               size: file.size,
@@ -448,16 +486,19 @@ export async function uploadImageApi(
     try {
       const res = await axios.post('/api/upload', postPayload, { headers });
       if (onProgress) onProgress(100);
-      return res.data;
+      const publicUrl = toPublicMediaUrl(res.data.fullUrl || res.data.url);
+      return { ...res.data, url: publicUrl, fullUrl: publicUrl, publicUrl };
     } catch {
       try {
         const res2 = await axios.post('/upload', postPayload, { headers });
         if (onProgress) onProgress(100);
-        return res2.data;
+        const publicUrl2 = toPublicMediaUrl(res2.data.fullUrl || res2.data.url);
+        return { ...res2.data, url: publicUrl2, fullUrl: publicUrl2, publicUrl: publicUrl2 };
       } catch {
         const res3 = await siteApi.post('/upload', postPayload);
         if (onProgress) onProgress(100);
-        return res3.data;
+        const publicUrl3 = toPublicMediaUrl(res3.data.fullUrl || res3.data.url);
+        return { ...res3.data, url: publicUrl3, fullUrl: publicUrl3, publicUrl: publicUrl3 };
       }
     }
   };
@@ -495,12 +536,22 @@ export async function uploadImageApi(
 export async function getMediaFilesApi(): Promise<Array<{
   filename: string;
   url: string;
+  fullUrl?: string;
+  publicUrl?: string;
+  relativeUrl?: string;
   size: number;
   createdAt: string;
   isImage: boolean;
 }>> {
   const res = await siteApi.get('/media');
-  return res.data?.files || [];
+  const files = res.data?.files || [];
+  return files.map((f: any) => ({
+    ...f,
+    url: toPublicMediaUrl(f.fullUrl || f.url),
+    fullUrl: toPublicMediaUrl(f.fullUrl || f.url),
+    publicUrl: toPublicMediaUrl(f.fullUrl || f.url),
+    relativeUrl: f.relativeUrl || f.url
+  }));
 }
 
 export async function deleteMediaFileApi(filename: string): Promise<boolean> {
@@ -513,6 +564,9 @@ export interface MediaConfigResponse {
   currentPath: string;
   resolvedPath?: string;
   defaultPath: string;
+  publicMediaUrl?: string;
+  publicOrigin?: string;
+  samplePublicUrl?: string;
   exists: boolean;
   writable: boolean;
   created?: boolean;
@@ -542,20 +596,23 @@ export async function getMediaConfigApi(): Promise<MediaConfigResponse> {
   }
 }
 
-export async function updateMediaConfigApi(storagePath: string): Promise<MediaConfigResponse> {
+export async function updateMediaConfigApi(
+  options: { storagePath?: string; publicMediaUrl?: string } | string
+): Promise<MediaConfigResponse> {
   const currentBaseUrl = getApiBaseUrl();
   const endpoint = currentBaseUrl.endsWith('/api') ? '/media/config' : '/api/media/config';
+  const payload = typeof options === 'string' ? { storagePath: options } : options;
 
   try {
-    const res = await siteApi.post(endpoint, { storagePath });
+    const res = await siteApi.post(endpoint, payload);
     return res.data;
   } catch (err: any) {
     if (err.response?.status === 404 || !err.response) {
       try {
-        const fb1 = await axios.post('/api/media/config', { storagePath });
+        const fb1 = await axios.post('/api/media/config', payload);
         return fb1.data;
       } catch {
-        const fb2 = await axios.post('/media/config', { storagePath });
+        const fb2 = await axios.post('/media/config', payload);
         return fb2.data;
       }
     }

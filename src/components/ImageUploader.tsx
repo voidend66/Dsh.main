@@ -83,8 +83,9 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
         setUploadProgress(percent);
       });
 
-      if (response && response.success && response.url) {
-        onChange(response.url);
+      if (response && response.success && (response.fullUrl || response.url)) {
+        const publicUrl = toPublicMediaUrl(response.fullUrl || response.url);
+        onChange(publicUrl);
       } else {
         setErrorMessage(response?.message || 'خطا در آپلود عکس.');
       }
@@ -150,7 +151,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
   };
 
   const handleSelectFromLibrary = (url: string) => {
-    onChange(url);
+    onChange(toPublicMediaUrl(url));
     setShowMediaLibrary(false);
   };
 
@@ -191,7 +192,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       <p className="text-[11px] text-slate-400 flex items-center gap-1">
         <HardDrive className="w-3 h-3 text-teal-600 shrink-0" />
         <span>
-          {description || `عکس در حافظه سیستم (${activeStoragePath}) ذخیره می‌شود (اگر پوشه نباشد خودکار ساخته می‌شود).`}
+          {description || `عکس در حافظه سیستم (${activeStoragePath}) ذخیره شده و لینک عمومی مستقیم برای وب‌سایت تولید می‌گردد.`}
         </span>
       </p>
 
@@ -208,7 +209,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       {value ? (
         <div className="border border-teal-200 bg-teal-50/40 rounded-2xl p-3 flex flex-col sm:flex-row items-center gap-4 transition-all">
           {/* Image Thumbnail Preview */}
-          <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-teal-300/50 shadow-xs">
+          <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-teal-300/50 shadow-xs group">
             <img
               src={value}
               alt="پیش‌نمایش تصویر"
@@ -221,30 +222,55 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             <div className="absolute top-1 right-1 bg-teal-600 text-white p-1 rounded-md shadow-xs">
               <Check className="w-3 h-3" />
             </div>
+            <a
+              href={value}
+              target="_blank"
+              rel="noreferrer"
+              className="absolute bottom-1 left-1 bg-black/60 hover:bg-black text-white p-1 rounded-md text-[10px] flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="مشاهده مستقیم تصویر در تب جدید"
+            >
+              <ExternalLink className="w-3 h-3" />
+            </a>
           </div>
 
           {/* Details & Controls */}
           <div className="flex-1 w-full space-y-2 text-right">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-100 text-teal-800 border border-teal-200">
-                <HardDrive className="w-3 h-3" />
-                ذخیره‌شده در {activeStoragePath}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <Check className="w-3 h-3 text-emerald-600" />
+                لینک عمومی مستقیم و فعال
               </span>
-              <span className="text-[10px] font-mono text-slate-400 truncate max-w-[200px]" dir="ltr">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                <HardDrive className="w-3 h-3 text-teal-600" />
+                {activeStoragePath}
+              </span>
+              <span className="text-[10px] font-mono text-slate-400 truncate max-w-[160px]" dir="ltr">
                 {value.split('/').pop()}
               </span>
             </div>
 
-            <div className="p-1.5 bg-white border border-teal-100 rounded-lg text-[11px] font-mono text-slate-700 flex items-center justify-between gap-2" dir="ltr">
-              <span className="truncate select-all">{value}</span>
-              <button
-                type="button"
-                onClick={handleCopyUrl}
-                className="shrink-0 p-1 text-slate-400 hover:text-teal-600 rounded-md transition-colors"
-                title="کپی آدرس تصویر"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
+            <div className="p-1.5 bg-white border border-teal-200 rounded-lg text-[11px] font-mono text-slate-800 flex items-center justify-between gap-2 shadow-2xs" dir="ltr">
+              <span className="truncate select-all text-teal-900 font-medium">{value}</span>
+              <div className="flex items-center gap-1 shrink-0">
+                <a
+                  href={value}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-1 text-slate-400 hover:text-teal-600 rounded-md transition-colors"
+                  title="باز کردن لینک عمومی"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={handleCopyUrl}
+                  className="px-2 py-0.5 bg-teal-50 hover:bg-teal-100 text-teal-700 font-sans text-[11px] font-semibold rounded-md border border-teal-200 flex items-center gap-1 transition-colors cursor-pointer"
+                  title="کپی لینک عمومی تصویر برای استفاده در سایت یا هر جای دیگر"
+                >
+                  {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  <span>{copied ? 'کپی شد!' : 'کپی لینک مستقیم'}</span>
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 pt-1">

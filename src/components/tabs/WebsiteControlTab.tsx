@@ -126,6 +126,8 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
   const [customStoragePath, setCustomStoragePath] = useState<string>('/media/drshahidi');
   const [isSavingStoragePath, setIsSavingStoragePath] = useState<boolean>(false);
   const [storagePathMessage, setStoragePathMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [customPublicMediaUrl, setCustomPublicMediaUrl] = useState<string>('');
+  const [isSavingPublicUrl, setIsSavingPublicUrl] = useState<boolean>(false);
 
   // Search and filters
   const [articleSearch, setArticleSearch] = useState<string>('');
@@ -219,6 +221,9 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
       if (configData && configData.currentPath) {
         setMediaConfig(configData);
         setCustomStoragePath(configData.currentPath);
+        if (configData.publicMediaUrl) {
+          setCustomPublicMediaUrl(configData.publicMediaUrl);
+        }
       }
     } catch (err: any) {
       console.error('Error fetching live data from API:', err);
@@ -240,6 +245,9 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
       if (cfg && cfg.currentPath) {
         setMediaConfig(cfg);
         setCustomStoragePath(cfg.currentPath);
+        if (cfg.publicMediaUrl) {
+          setCustomPublicMediaUrl(cfg.publicMediaUrl);
+        }
       }
       showToast('فهرست تصاویر و وضعیت پوشه ذخیره‌سازی به‌روزرسانی شد.');
     } catch (err: any) {
@@ -258,7 +266,7 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
     setIsSavingStoragePath(true);
     setStoragePathMessage(null);
     try {
-      const res = await updateMediaConfigApi(targetPath);
+      const res = await updateMediaConfigApi({ storagePath: targetPath });
       if (res && res.success) {
         setMediaConfig(res);
         setCustomStoragePath(res.currentPath);
@@ -283,6 +291,27 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
       showToast(`خطا: ${errMsg}`);
     } finally {
       setIsSavingStoragePath(false);
+    }
+  };
+
+  const handleSavePublicMediaUrl = async (overrideUrl?: string) => {
+    const targetUrl = (overrideUrl !== undefined ? overrideUrl : customPublicMediaUrl).trim();
+    setIsSavingPublicUrl(true);
+    try {
+      const res = await updateMediaConfigApi({ publicMediaUrl: targetUrl });
+      if (res && res.success) {
+        setMediaConfig(res);
+        setCustomPublicMediaUrl(res.publicMediaUrl || '');
+        showToast('آدرس عمومی مستقیم تصاویر با موفقیت ذخیره شد.');
+        const files = await getMediaFilesApi();
+        setMediaList(files);
+      } else {
+        showToast(res?.error || 'خطا در ثبت آدرس عمومی مستقیم');
+      }
+    } catch (err: any) {
+      showToast(`خطا: ${err.message || 'مشکل در ارتباط با سرور'}`);
+    } finally {
+      setIsSavingPublicUrl(false);
     }
   };
 
@@ -1591,6 +1620,120 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
             </div>
           </div>
 
+          {/* PUBLIC MEDIA DOMAIN / URL CONFIGURATION CARD */}
+          <div className="bg-white border-2 border-emerald-500/30 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">
+                    دامنه و لینک عمومی مستقیم تصاویر (Public Media Domain)
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    ساخت خودکار لینک اینترنتی کامل برای هر تصویر تا در سایت دکتر یا هر جای دیگر مستقیماً لود شود.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-400">لینک فعال فعلی:</span>
+                <span className="font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-[11px] font-bold dir-ltr select-all">
+                  {mediaConfig?.publicOrigin || (typeof window !== 'undefined' ? window.location.origin : '')}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  دامنه یا آی‌پی عمومی سرور شما (برای ساخت لینک‌های کامل تصاویر):
+                </label>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1">
+                    <Globe className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={customPublicMediaUrl}
+                      onChange={(e) => setCustomPublicMediaUrl(e.target.value)}
+                      placeholder="خالی بگذارید (تشخیص خودکار از سرور) یا مثلاً: https://drshahidi.com یا http://185.x.x.x:3000"
+                      className="w-full pr-10 pl-3 py-2 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-500 bg-slate-50/60 focus:bg-white text-left dir-ltr"
+                      dir="ltr"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSavePublicMediaUrl()}
+                    disabled={isSavingPublicUrl}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors shrink-0 shadow-xs cursor-pointer"
+                  >
+                    {isSavingPublicUrl ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>در حال ذخیره...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>ذخیره دامنه عمومی</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Presets for Public URL */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                <span className="text-slate-400 font-medium text-[11px]">پیشنهادها:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomPublicMediaUrl('');
+                    handleSavePublicMediaUrl('');
+                  }}
+                  className="px-2.5 py-1 rounded-xl text-[11px] bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-900 border border-slate-200 transition-colors"
+                >
+                  تشخیص هوشمند و خودکار بر اساس سرور جاری (توصیه‌شده)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const localUrl = 'http://localhost:3000';
+                    setCustomPublicMediaUrl(localUrl);
+                    handleSavePublicMediaUrl(localUrl);
+                  }}
+                  className="px-2.5 py-1 rounded-xl text-[11px] bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-900 border border-slate-200 transition-colors font-mono"
+                >
+                  http://localhost:3000
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const official = 'https://drshahidi.com';
+                    setCustomPublicMediaUrl(official);
+                    handleSavePublicMediaUrl(official);
+                  }}
+                  className="px-2.5 py-1 rounded-xl text-[11px] bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-900 border border-slate-200 transition-colors font-mono"
+                >
+                  https://drshahidi.com
+                </button>
+              </div>
+
+              {/* Live Preview Sample */}
+              <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-2xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="text-emerald-900 font-medium">نمونه لینک عمومی که به سایت دکتر ارسال می‌شود:</span>
+                </div>
+                <code className="text-emerald-800 font-mono text-[11px] bg-white px-2.5 py-1 rounded-lg border border-emerald-200 select-all dir-ltr text-left" dir="ltr">
+                  {mediaConfig?.samplePublicUrl || `${mediaConfig?.publicOrigin || (typeof window !== 'undefined' ? window.location.origin : '')}/media/drshahidi/example.jpg`}
+                </code>
+              </div>
+            </div>
+          </div>
+
           {/* Direct Upload Section */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
@@ -1695,13 +1838,13 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
                             type="button"
                             onClick={() => {
                               navigator.clipboard.writeText(file.url);
-                              showToast(`آدرس نسبی کپی شد: ${file.url}`);
+                              showToast(`لینک عمومی مستقیم کپی شد: ${file.url}`);
                             }}
-                            className="text-[11px] px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-teal-400 text-slate-700 font-medium flex items-center gap-1 shadow-2xs transition-colors"
-                            title="کپی آدرس نسبی (/media/drshahidi/...)"
+                            className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                            title="کپی لینک عمومی کامل (برای استفاده مستقیم در وب‌سایت یا هر جای دیگر)"
                           >
-                            <Copy className="w-3 h-3 text-teal-600" />
-                            <span>کپی لینک</span>
+                            <Copy className="w-3 h-3 text-emerald-600" />
+                            <span>کپی لینک مستقیم</span>
                           </button>
 
                           <button
@@ -1720,27 +1863,40 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
             )}
           </div>
 
-          {/* Integration Guide for External Site */}
+          {/* Integration Guide for External Site - Direct Public Links */}
           <div className="bg-slate-900 text-slate-200 rounded-3xl p-6 shadow-sm border border-slate-800 space-y-4">
-            <div className="flex items-center gap-2 text-teal-400">
-              <Code className="w-5 h-5" />
-              <h4 className="text-sm font-bold text-white">راهنمای نحوه اتصال و استفاده از تصاویر در وب‌سایت اصلی</h4>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-emerald-400">
+                <Globe className="w-5 h-5" />
+                <h4 className="text-sm font-bold text-white">راهنمای لینک عمومی مستقیم برای وب‌سایت دکتر (بدون دردسر آدرس نسبی)</h4>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const sampleLink = mediaConfig?.samplePublicUrl || `${mediaConfig?.publicOrigin || (typeof window !== 'undefined' ? window.location.origin : '')}/media/drshahidi/example.jpg`;
+                  const message = `سلام مهندس وقت‌بخیر،\nتصاویر پنل مدیریت اکنون مستقیماً با لینک عمومی کامل در فیلدهای imageUrl، featuredImage و gallery ذخیره و ارسال می‌شوند:\nنمونه: ${sampleLink}\n\nدر فرانت‌سایت نیازی به اضافه کردن هیچ پیشوندی به آدرس تصویر نیست و کافیست مستقیماً تگ زیر را رندر کنید:\n<img src={item.imageUrl} alt={item.title} />\nمسیر /media نیز در سرور آپلود به‌صورت کاملاً عمومی و CORS باز سرو می‌شود.`;
+                  navigator.clipboard.writeText(message);
+                  showToast('متن راهنمای مهندس سایت کپی شد!');
+                }}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer w-fit"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>کپی پیام آماده برای مهندس سایت</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs leading-relaxed text-slate-300">
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-                <span className="font-bold text-teal-300 block">۱. اگر فرانت‌اند روی همین سرور ران است:</span>
-                <p>نیازی به هیچ تغییری ندارید؛ تصویر مستقیماً از مسیر زیر در تگ HTML قابل فراخوانی است:</p>
-                <code className="block bg-slate-900 p-2 rounded-lg font-mono text-amber-300 dir-ltr text-left">
-                  {`<img src="/media/drshahidi/example.jpg" alt="خدمت" />`}
-                </code>
+                <span className="font-bold text-emerald-300 block">۱. ساخت خودکار لینک عمومی در پنل:</span>
+                <p>هر تصویری که آپلود می‌کنید، بلافاصله تبدیل به یک لینک مستقیم کامل می‌شود (مثلاً <code className="text-amber-300 font-mono text-[11px] dir-ltr select-all">https://DOMAIN/media/drshahidi/image.jpg</code>) و در دیتابیس مقالات و خدمات نیز همین لینک کامل ذخیره می‌گردد.</p>
               </div>
 
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-                <span className="font-bold text-teal-300 block">۲. اگر وب‌سایت از سرور یا پورت دیگری اجرا می‌شود:</span>
-                <p>آدرس کامل سرور را در ابتدای مسیر قرار دهید:</p>
+                <span className="font-bold text-teal-300 block">۲. نحوه استفاده در فرانت‌سایت دکتر:</span>
+                <p>مهندس سایت فقط تگ تصویر استاندارد را قرار می‌دهد و هیچ تغییری در مسیر نیاز ندارد:</p>
                 <code className="block bg-slate-900 p-2 rounded-lg font-mono text-emerald-300 dir-ltr text-left">
-                  {`<img src="${customApiUrl.replace('/api', '')}/media/drshahidi/example.jpg" />`}
+                  {`<img src={article.imageUrl} alt={article.title} />`}
                 </code>
               </div>
             </div>
