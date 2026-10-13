@@ -865,16 +865,31 @@ async function startServer() {
 
   // 4. List all media files in the active storage directory
   // 4. List all media files across active storage directory and safe project storage
-  app.get(["/api/media", "/media/list", "/api/media/files"], (req, res) => {
+  app.get(["/api/media", "/media", "/media/list", "/api/media/files"], (req, res) => {
     try {
       const activeDir = getActiveMediaDir();
-      const dirsToScan = [
+      const rawDir = (() => {
+        try {
+          const db = readDb();
+          return db.settings?.mediaStorageDir || "";
+        } catch { return ""; }
+      })();
+
+      const dirsToScan = Array.from(new Set([
         activeDir,
+        rawDir,
+        path.resolve(activeDir),
+        path.resolve(rawDir || ""),
+        path.join("/", (rawDir || "").replace(/^[./\\]+/, "")),
+        path.join(process.cwd(), (rawDir || "").replace(/^[./\\]+/, "")),
+        "/media/drshahidi",
+        "/media/drshahidi/",
         DEFAULT_MEDIA_DIR,
         SAFE_LOCAL_MEDIA_DIR,
+        path.join(process.cwd(), "media", "drshahidi"),
         path.join(process.cwd(), "media"),
         path.join(os.tmpdir(), "drshahidi_media")
-      ];
+      ])).filter(d => Boolean(d && typeof d === "string"));
 
       const foundFilesMap = new Map<string, { filename: string; filePath: string; stats: fs.Stats }>();
 

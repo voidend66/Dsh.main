@@ -2000,10 +2000,23 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
             </div>
 
             {mediaList.length === 0 ? (
-              <div className="text-center py-12 space-y-2">
+              <div className="text-center py-12 space-y-3">
                 <HardDrive className="w-12 h-12 text-slate-300 mx-auto" />
-                <p className="text-xs font-semibold text-slate-700">هنوز تصویری در مسیر /media/drshahidi ذخیره نشده است.</p>
-                <p className="text-[11px] text-slate-400">با استفاده از فرم آپلود بالا یا هنگام افزودن خدمات و مقالات، اولین تصویر خود را ذخیره کنید.</p>
+                <p className="text-xs font-semibold text-slate-700">
+                  هنوز تصویری در مسیر <code className="font-mono text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded dir-ltr">{mediaConfig?.currentPath || customStoragePath || '/media/drshahidi'}</code> یافت نشد.
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  با استفاده از دکمه زیر می‌توانید پوشه سرور را اسکن کنید، یا با کلیک روی «/media/drshahidi» در بالا، مسیر ریشه را فعال نمایید.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleRefreshMedia}
+                  disabled={isLoadingMedia}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMedia ? 'animate-spin' : ''}`} />
+                  <span>اسکن و به‌روزرسانی مجدد فایل‌ها</span>
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

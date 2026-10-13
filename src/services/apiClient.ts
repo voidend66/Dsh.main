@@ -545,14 +545,40 @@ export async function getMediaFilesApi(): Promise<Array<{
   createdAt: string;
   isImage: boolean;
 }>> {
-  const res = await siteApi.get('/media');
-  const files = res.data?.files || [];
-  return files.map((f: any) => ({
+  const currentBaseUrl = getApiBaseUrl();
+  const endpoint = currentBaseUrl.endsWith('/api') ? '/media' : '/api/media';
+
+  let rawFiles: any[] = [];
+  try {
+    const res = await siteApi.get(endpoint);
+    rawFiles = res.data?.files || (Array.isArray(res.data) ? res.data : []);
+  } catch (err: any) {
+    console.warn(`[getMediaFilesApi] Primary endpoint ${endpoint} failed, trying fallbacks...`, err);
+    try {
+      const fb1 = await axios.get('/api/media');
+      rawFiles = fb1.data?.files || (Array.isArray(fb1.data) ? fb1.data : []);
+    } catch {
+      try {
+        const fb2 = await axios.get('/media');
+        rawFiles = fb2.data?.files || (Array.isArray(fb2.data) ? fb2.data : []);
+      } catch {
+        try {
+          const fb3 = await siteApi.get('/api/media');
+          rawFiles = fb3.data?.files || [];
+        } catch {
+          rawFiles = [];
+        }
+      }
+    }
+  }
+
+  return rawFiles.map((f: any) => ({
     ...f,
-    url: toPublicMediaUrl(f.fullUrl || f.url),
-    fullUrl: toPublicMediaUrl(f.fullUrl || f.url),
-    publicUrl: toPublicMediaUrl(f.fullUrl || f.url),
-    relativeUrl: f.relativeUrl || f.url
+    url: toPublicMediaUrl(f.fullUrl || f.url || `/media/drshahidi/${f.filename}`),
+    fullUrl: toPublicMediaUrl(f.fullUrl || f.url || `/media/drshahidi/${f.filename}`),
+    publicUrl: toPublicMediaUrl(f.fullUrl || f.url || `/media/drshahidi/${f.filename}`),
+    relativeUrl: f.relativeUrl || `/media/drshahidi/${f.filename}`,
+    isImage: f.isImage !== undefined ? f.isImage : true
   }));
 }
 
