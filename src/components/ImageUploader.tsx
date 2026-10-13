@@ -11,7 +11,7 @@ import {
   ExternalLink,
   Sparkles
 } from 'lucide-react';
-import { uploadImageApi, getMediaFilesApi, getMediaConfigApi, UploadResponse } from '../services/apiClient';
+import { uploadImageApi, getMediaFilesApi, getMediaConfigApi, toPublicMediaUrl, UploadResponse } from '../services/apiClient';
 
 interface ImageUploaderProps {
   label: string;

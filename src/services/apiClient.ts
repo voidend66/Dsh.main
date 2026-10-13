@@ -363,6 +363,8 @@ export interface UploadResponse {
   size: number;
   mimetype: string;
   storagePath: string;
+  activeDir?: string;
+  error?: string;
 }
 
 export function toPublicMediaUrl(pathOrUrl?: string): string {
@@ -613,6 +615,55 @@ export async function updateMediaConfigApi(
         return fb1.data;
       } catch {
         const fb2 = await axios.post('/media/config', payload);
+        return fb2.data;
+      }
+    }
+    throw err;
+  }
+}
+
+export interface MediaDiagnosticsResponse {
+  success: boolean;
+  environment: {
+    platform: string;
+    nodeVersion: string;
+    currentUser: string;
+    isRoot: boolean;
+    cwd: string;
+  };
+  storage: {
+    activeDir: string;
+    activeDirExists: boolean;
+    activeDirWritable: boolean;
+    activeDirError: string | null;
+    safeLocalDir: string;
+    safeLocalDirExists: boolean;
+    safeLocalDirWritable: boolean;
+    effectiveDir: string;
+    isFallbackActive: boolean;
+    fallbackWarning: string | null;
+  };
+  linuxHelp: {
+    needsSudoPermissions: boolean;
+    commandsToFixActiveDir: string[];
+    zeroSudoAlternative: string;
+  };
+}
+
+export async function getMediaDiagnosticsApi(): Promise<MediaDiagnosticsResponse> {
+  const currentBaseUrl = getApiBaseUrl();
+  const endpoint = currentBaseUrl.endsWith('/api') ? '/media/diagnostics' : '/api/media/diagnostics';
+
+  try {
+    const res = await siteApi.get(endpoint);
+    return res.data;
+  } catch (err: any) {
+    if (err.response?.status === 404 || !err.response) {
+      try {
+        const fb1 = await axios.get('/api/media/diagnostics');
+        return fb1.data;
+      } catch {
+        const fb2 = await axios.get('/media/diagnostics');
         return fb2.data;
       }
     }

@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import multer from "multer";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
@@ -121,6 +122,70 @@ function getActiveMediaDir(): string {
   return DEFAULT_MEDIA_DIR;
 }
 
+// Check if a directory is writable by attempting a probe write
+function isDirWritable(dirPath: string): boolean {
+  try {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+    const testFile = path.join(dirPath, `.probe_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+    fs.writeFileSync(testFile, "ok", "utf8");
+    fs.unlinkSync(testFile);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Find a guaranteed writable media storage directory across Linux/Unix/Windows environments
+function getWritableMediaDir(): {
+  dir: string;
+  isFallback: boolean;
+  originalDir: string;
+  warning?: string;
+} {
+  const originalDir = getActiveMediaDir();
+
+  // 1. Try active / configured directory
+  if (isDirWritable(originalDir)) {
+    return { dir: originalDir, isFallback: false, originalDir };
+  }
+
+  // 2. Try safe local project directory: ./media/drshahidi
+  if (isDirWritable(SAFE_LOCAL_MEDIA_DIR)) {
+    return {
+      dir: SAFE_LOCAL_MEDIA_DIR,
+      isFallback: true,
+      originalDir,
+      warning: `مسیر «${originalDir}» در لینوکس دسترسی نوشتن (Permission) نداشت. فایل در پوشه امن پروژه (${SAFE_LOCAL_MEDIA_DIR}) ذخیره گردید.`
+    };
+  }
+
+  // 3. Try project cwd ./media
+  const cwdMedia = path.join(process.cwd(), "media");
+  if (isDirWritable(cwdMedia)) {
+    return {
+      dir: cwdMedia,
+      isFallback: true,
+      originalDir,
+      warning: `مسیر «${originalDir}» در دسترس نبود؛ فایل در (${cwdMedia}) ذخیره شد.`
+    };
+  }
+
+  // 4. Try Linux /tmp directory as ultimate fallback
+  const tmpMedia = path.join(os.tmpdir(), "drshahidi_media");
+  if (isDirWritable(tmpMedia)) {
+    return {
+      dir: tmpMedia,
+      isFallback: true,
+      originalDir,
+      warning: `فایل در مسیر موقت لینوکس (${tmpMedia}) ذخیره شد.`
+    };
+  }
+
+  return { dir: originalDir, isFallback: false, originalDir };
+}
+
 // Automatically creates directory recursively if missing, and validates writability
 function ensureDirectoryReady(targetPath: string): {
   exists: boolean;
@@ -178,30 +243,11 @@ try {
 // Multer disk storage engine to save files directly into active media storage directory with bulletproof fallback
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    let targetDir = getActiveMediaDir();
-    try {
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      // Test write permission
-      const testFile = path.join(targetDir, `.multer_test_${Date.now()}`);
-      fs.writeFileSync(testFile, "ok", "utf8");
-      fs.unlinkSync(testFile);
-      cb(null, targetDir);
-    } catch (err: any) {
-      console.warn(`[MULTER] Target directory ${targetDir} not writable (${err.message}). Using safe local directory...`);
-      const fallbackDir = fs.existsSync(DEFAULT_MEDIA_DIR) ? DEFAULT_MEDIA_DIR : SAFE_LOCAL_MEDIA_DIR;
-      try {
-        if (!fs.existsSync(fallbackDir)) {
-          fs.mkdirSync(fallbackDir, { recursive: true });
-        }
-        cb(null, fallbackDir);
-      } catch {
-        const cwdMedia = path.join(process.cwd(), "media");
-        if (!fs.existsSync(cwdMedia)) fs.mkdirSync(cwdMedia, { recursive: true });
-        cb(null, cwdMedia);
-      }
+    const { dir, isFallback, originalDir, warning } = getWritableMediaDir();
+    if (isFallback) {
+      console.warn(`[MULTER FALLBACK] ${originalDir} is not writable. Writing to: ${dir}. (${warning})`);
     }
+    cb(null, dir);
   },
   filename: (_req, file, cb) => {
     const rawExt = path.extname(file.originalname).toLowerCase();
@@ -396,8 +442,11 @@ async function startServer() {
     const candidatePaths = [
       path.join(activeDir, filename),
       path.join(DEFAULT_MEDIA_DIR, filename),
+      path.join(SAFE_LOCAL_MEDIA_DIR, filename),
       path.join(process.cwd(), "media", "drshahidi", filename),
-      path.join(process.cwd(), "media", filename)
+      path.join(process.cwd(), "media", filename),
+      path.join(os.tmpdir(), "drshahidi_media", filename),
+      path.join(os.tmpdir(), filename)
     ];
 
     for (const filePath of candidatePaths) {
@@ -545,6 +594,53 @@ async function startServer() {
     }
   });
 
+  // 1.1 Linux & Storage Diagnostics Endpoint
+  app.get(["/api/media/diagnostics", "/media/diagnostics"], (req, res) => {
+    try {
+      const activeDir = getActiveMediaDir();
+      const activeStatus = ensureDirectoryReady(activeDir);
+      const safeStatus = ensureDirectoryReady(SAFE_LOCAL_MEDIA_DIR);
+      const cwd = process.cwd();
+      const currentUser = process.env.USER || process.env.LOGNAME || process.env.USERNAME || "unknown";
+      const isRoot = typeof (process as any).getuid === "function" ? (process as any).getuid() === 0 : false;
+      const writableResult = getWritableMediaDir();
+
+      return res.json({
+        success: true,
+        environment: {
+          platform: process.platform,
+          nodeVersion: process.version,
+          currentUser,
+          isRoot,
+          cwd
+        },
+        storage: {
+          activeDir,
+          activeDirExists: activeStatus.exists,
+          activeDirWritable: activeStatus.writable,
+          activeDirError: activeStatus.error || null,
+          safeLocalDir: SAFE_LOCAL_MEDIA_DIR,
+          safeLocalDirExists: safeStatus.exists,
+          safeLocalDirWritable: safeStatus.writable,
+          effectiveDir: writableResult.dir,
+          isFallbackActive: writableResult.isFallback,
+          fallbackWarning: writableResult.warning || null
+        },
+        linuxHelp: {
+          needsSudoPermissions: !activeStatus.writable && activeDir.startsWith("/media"),
+          commandsToFixActiveDir: [
+            `sudo mkdir -p ${activeDir}`,
+            `sudo chmod -R 777 ${activeDir}`,
+            `sudo chown -R ${currentUser}:${currentUser} ${activeDir}`
+          ],
+          zeroSudoAlternative: "./media/drshahidi"
+        }
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // 2. Change storage path or public URL manually and auto-create directory if it doesn't exist
   app.post(["/api/media/config", "/media/config"], (req, res) => {
     try {
@@ -594,23 +690,11 @@ async function startServer() {
 
   // 3. Upload image directly into active media storage directory (Supports both Base64 JSON & Multipart FormData)
   app.post(["/api/upload", "/upload"], (req, res) => {
-    // Helper function to safely save Buffer to disk with fallback
+    // Helper function to safely save Buffer to disk with guaranteed writable fallback
     const saveBufferToFile = (buffer: Buffer, rawName: string, mimetype: string) => {
-      let activeDir = getActiveMediaDir();
-      try {
-        if (!fs.existsSync(activeDir)) {
-          fs.mkdirSync(activeDir, { recursive: true });
-        }
-        // Test write
-        const testFile = path.join(activeDir, `.test_${Date.now()}`);
-        fs.writeFileSync(testFile, "ok");
-        fs.unlinkSync(testFile);
-      } catch {
-        // Fallback to guaranteed safe local media directory
-        activeDir = fs.existsSync(DEFAULT_MEDIA_DIR) ? DEFAULT_MEDIA_DIR : SAFE_LOCAL_MEDIA_DIR;
-        if (!fs.existsSync(activeDir)) {
-          fs.mkdirSync(activeDir, { recursive: true });
-        }
+      const { dir: activeDir, isFallback, originalDir, warning } = getWritableMediaDir();
+      if (isFallback) {
+        console.warn(`[UPLOAD FALLBACK] ${originalDir} is not writable. Saving image to: ${activeDir}. (${warning})`);
       }
 
       const rawExt = path.extname(rawName).toLowerCase();
@@ -633,6 +717,8 @@ async function startServer() {
         filename,
         storagePath,
         activeDir,
+        isFallback,
+        warning,
         relativeUrl,
         fullUrl,
         size: buffer.length,
@@ -778,40 +864,59 @@ async function startServer() {
   });
 
   // 4. List all media files in the active storage directory
+  // 4. List all media files across active storage directory and safe project storage
   app.get(["/api/media", "/media/list", "/api/media/files"], (req, res) => {
     try {
       const activeDir = getActiveMediaDir();
-      if (!fs.existsSync(activeDir)) {
-        ensureDirectoryReady(activeDir);
+      const dirsToScan = [
+        activeDir,
+        DEFAULT_MEDIA_DIR,
+        SAFE_LOCAL_MEDIA_DIR,
+        path.join(process.cwd(), "media"),
+        path.join(os.tmpdir(), "drshahidi_media")
+      ];
+
+      const foundFilesMap = new Map<string, { filename: string; filePath: string; stats: fs.Stats }>();
+
+      for (const dir of dirsToScan) {
+        try {
+          if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+            const names = fs.readdirSync(dir).filter(f => !f.startsWith(".") && !f.startsWith(".probe") && !f.startsWith(".write_test"));
+            for (const name of names) {
+              if (!foundFilesMap.has(name)) {
+                try {
+                  const p = path.join(dir, name);
+                  const st = fs.statSync(p);
+                  if (st.isFile()) {
+                    foundFilesMap.set(name, { filename: name, filePath: p, stats: st });
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
       }
 
-      const fileNames = fs.existsSync(activeDir) 
-        ? fs.readdirSync(activeDir).filter(f => !f.startsWith("."))
-        : [];
-
-      const files = fileNames
-        .map(filename => {
-          try {
-            const filePath = path.join(activeDir, filename);
-            const stats = fs.statSync(filePath);
-            const relativeUrl = `/media/drshahidi/${filename}`;
-            const fullUrl = toAbsoluteMediaUrl(req, relativeUrl);
-            return {
-              filename,
-              url: fullUrl,
-              fullUrl,
-              publicUrl: fullUrl,
-              relativeUrl,
-              size: stats.size,
-              createdAt: stats.birthtime || stats.mtime,
-              isImage: /\.(jpg|jpeg|png|webp|svg|gif|avif)$/i.test(filename)
-            };
-          } catch {
-            return null;
-          }
+      const files = Array.from(foundFilesMap.values())
+        .map(({ filename, stats }) => {
+          const relativeUrl = `/media/drshahidi/${filename}`;
+          const fullUrl = toAbsoluteMediaUrl(req, relativeUrl);
+          return {
+            filename,
+            url: fullUrl,
+            fullUrl,
+            publicUrl: fullUrl,
+            relativeUrl,
+            size: stats.size,
+            createdAt: stats.birthtime || stats.mtime,
+            isImage: /\.(jpg|jpeg|png|webp|svg|gif|avif|ico|bmp)$/i.test(filename)
+          };
         })
-        .filter(Boolean)
-        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       return res.json({
         success: true,
@@ -828,23 +933,30 @@ async function startServer() {
   app.delete(["/api/media/:filename", "/media/:filename"], requireApiKey, (req, res) => {
     try {
       const filename = path.basename(req.params.filename);
-      const activeDir = getActiveMediaDir();
-      const primaryPath = path.join(activeDir, filename);
+      const dirsToCheck = [
+        getActiveMediaDir(),
+        DEFAULT_MEDIA_DIR,
+        SAFE_LOCAL_MEDIA_DIR,
+        path.join(process.cwd(), "media"),
+        path.join(os.tmpdir(), "drshahidi_media")
+      ];
 
-      if (fs.existsSync(primaryPath)) {
-        fs.unlinkSync(primaryPath);
-        console.log(`[MEDIA DELETE] Deleted ${primaryPath}`);
-        return res.json({ success: true, message: `فایل «${filename}» با موفقیت حذف شد.` });
+      let deleted = false;
+      for (const dir of dirsToCheck) {
+        try {
+          const filePath = path.join(dir, filename);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            deleted = true;
+            console.log(`[MEDIA DELETE] Deleted ${filePath}`);
+          }
+        } catch {
+          // continue
+        }
       }
 
-      // Check fallback path if activeDir is customized
-      if (activeDir !== DEFAULT_MEDIA_DIR) {
-        const fallbackPath = path.join(DEFAULT_MEDIA_DIR, filename);
-        if (fs.existsSync(fallbackPath)) {
-          fs.unlinkSync(fallbackPath);
-          console.log(`[MEDIA DELETE] Deleted fallback ${fallbackPath}`);
-          return res.json({ success: true, message: `فایل «${filename}» با موفقیت حذف شد.` });
-        }
+      if (deleted) {
+        return res.json({ success: true, message: `فایل «${filename}» با موفقیت حذف شد.` });
       }
 
       return res.status(404).json({ success: false, error: "فایل تصویر در حافظه یافت نشد." });

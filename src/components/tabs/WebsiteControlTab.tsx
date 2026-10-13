@@ -78,6 +78,7 @@ import {
   getReviewsApi,
   getFaqsApi,
   getMediaFilesApi,
+  uploadImageApi,
   deleteMediaFileApi,
   getMediaConfigApi,
   updateMediaConfigApi,
@@ -128,6 +129,15 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
   const [storagePathMessage, setStoragePathMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [customPublicMediaUrl, setCustomPublicMediaUrl] = useState<string>('');
   const [isSavingPublicUrl, setIsSavingPublicUrl] = useState<boolean>(false);
+  const [isTestingUpload, setIsTestingUpload] = useState<boolean>(false);
+  const [testUploadResult, setTestUploadResult] = useState<{
+    success: boolean;
+    url?: string;
+    error?: string;
+    activeDir?: string;
+    timestamp?: string;
+  } | null>(null);
+  const [copiedLinuxCmd, setCopiedLinuxCmd] = useState<boolean>(false);
 
   // Search and filters
   const [articleSearch, setArticleSearch] = useState<string>('');
@@ -328,6 +338,50 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
       }
     } catch (err: any) {
       showToast(`خطا: ${err.message}`);
+    }
+  };
+
+  const handleRunUploadTest = async () => {
+    setIsTestingUpload(true);
+    setTestUploadResult(null);
+    try {
+      // 1x1 transparent PNG byte data
+      const pixelBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const byteCharacters = atob(pixelBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const testFile = new File([byteArray], `test-linux-${Date.now()}.png`, { type: 'image/png' });
+
+      const res = await uploadImageApi(testFile);
+      if (res && res.success && (res.fullUrl || res.url)) {
+        setTestUploadResult({
+          success: true,
+          url: res.fullUrl || res.url,
+          activeDir: res.activeDir || res.storagePath,
+          timestamp: new Date().toLocaleTimeString('fa-IR')
+        });
+        showToast('آپلود تستی موفقیت‌آمیز بود! فایل ذخیره شد و لینک عمومی مستقیم ساخته شد.');
+        const files = await getMediaFilesApi();
+        setMediaList(files);
+      } else {
+        setTestUploadResult({
+          success: false,
+          error: res?.error || res?.message || 'خطا در بارگذاری فایل تستی روی سرور',
+          timestamp: new Date().toLocaleTimeString('fa-IR')
+        });
+      }
+    } catch (err: any) {
+      setTestUploadResult({
+        success: false,
+        error: err.message || 'خطا در اتصال به وب‌سرویس یا عدم مجوز نوشتن دیسک در لینوکس',
+        timestamp: new Date().toLocaleTimeString('fa-IR')
+      });
+      showToast(`خطای تست آپلود: ${err.message}`);
+    } finally {
+      setIsTestingUpload(false);
     }
   };
 
@@ -1493,6 +1547,168 @@ export const WebsiteControlTab: React.FC<WebsiteControlTabProps> = ({
                   <span>به‌روزرسانی لیست و بررسی وضعیت</span>
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* LINUX PERMISSION & LIVE UPLOAD DIAGNOSTICS CARD */}
+          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-3xl p-6 shadow-lg border border-slate-700/80 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-700/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <Terminal className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-white">
+                      راهنمای دسترسی لینوکس (Linux Permissions) و تست زنده دیسک
+                    </h4>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      mediaConfig?.writable !== false
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-500/40'
+                        : 'bg-rose-950 text-rose-300 border-rose-500/40'
+                    }`}>
+                      {mediaConfig?.writable !== false ? '✅ دیسک آماده نوشتن' : '⛔ نیاز به مجوز لینوکس (Permission)'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    علت عدم ذخیره عکس‌ها در سرور لینوکس و ارائه نشدن لینک عمومی به همراه راه‌حل‌های فوری:
+                  </p>
+                </div>
+              </div>
+
+              {/* Run Test Button */}
+              <button
+                type="button"
+                onClick={handleRunUploadTest}
+                disabled={isTestingUpload}
+                className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 active:bg-teal-600 text-slate-950 text-xs font-bold flex items-center justify-center gap-2 transition-all shrink-0 cursor-pointer shadow-md disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTestingUpload ? 'animate-spin' : ''}`} />
+                <span>{isTestingUpload ? 'در حال تست ذخیره روی دیسک...' : '🧪 تست زنده ذخیره و تولید لینک'}</span>
+              </button>
+            </div>
+
+            {/* Test result banner if exists */}
+            {testUploadResult && (
+              <div className={`p-4 rounded-2xl border text-xs space-y-2 ${
+                testUploadResult.success
+                  ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+                  : 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+              }`}>
+                <div className="flex items-center justify-between gap-2 font-bold">
+                  <div className="flex items-center gap-2">
+                    {testUploadResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    )}
+                    <span>
+                      {testUploadResult.success
+                        ? 'نتیجه تست: عالی! فایل تستی روی دیسک ذخیره شد و لینک عمومی بدون نقص ساخته شد.'
+                        : 'نتیجه تست: ذخیره‌سازی با خطا مواجه شد.'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">{testUploadResult.timestamp}</span>
+                </div>
+                {testUploadResult.success && testUploadResult.url && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center gap-2 bg-slate-950/80 p-2 rounded-xl border border-emerald-500/30 text-emerald-300 font-mono text-[11px] select-all dir-ltr">
+                      <span className="truncate flex-1">{testUploadResult.url}</span>
+                      <a
+                        href={testUploadResult.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 rounded-md bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 flex items-center gap-1 font-sans text-[10px]"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>تست در مرورگر</span>
+                      </a>
+                    </div>
+                    {testUploadResult.activeDir && (
+                      <p className="text-[11px] text-slate-400">
+                        محل ذخیره شده روی دیسک سرور: <code className="text-amber-300 dir-ltr">{testUploadResult.activeDir}</code>
+                      </p>
+                    )}
+                  </div>
+                )}
+                {!testUploadResult.success && testUploadResult.error && (
+                  <p className="text-rose-300 bg-black/40 p-2 rounded-xl font-mono text-[11px]">
+                    {testUploadResult.error}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Explanations & 2 Fast Solutions */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              {/* Solution 1: 1-Click Zero Sudo Switch to Project Folder */}
+              <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-2xl space-y-2.5 flex flex-col justify-between">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-teal-400 font-bold">
+                    <Sparkles className="w-4 h-4" />
+                    <span>راهکار ۱ (ساده‌ترین و سریع‌ترین - بدون نیاز به sudo):</span>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed text-[11px]">
+                    اگر در لینوکس دسترسی root ندارید، کافیست مسیر ذخیره را به پوشه محلی پروژه (<code>./media/drshahidi</code>) تغییر دهید. سیستم بدون نیاز به مجوز سیستم، تصاویر را در خود پروژه ذخیره کرده و به همان صورت نمایش می‌دهد.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomStoragePath('./media/drshahidi');
+                    handleSaveStoragePath('./media/drshahidi');
+                  }}
+                  disabled={isSavingStoragePath}
+                  className="w-full py-2 px-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>تغییر فوری به پوشه پروژه (./media/drshahidi)</span>
+                </button>
+              </div>
+
+              {/* Solution 2: Linux Terminal Sudo Commands */}
+              <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-2xl space-y-2.5 flex flex-col justify-between">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-amber-400 font-bold">
+                    <Terminal className="w-4 h-4" />
+                    <span>راهکار ۲ (دستورات لینوکس برای مسیر ریشه /media/drshahidi):</span>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed text-[11px]">
+                    در لینوکس، پوشه <code>/media</code> در ریشه هارد قرار دارد. با اجرای دستورات زیر در ترمینال سرور، دسترسی کامل نوشتن به آن داده می‌شود:
+                  </p>
+                  <div className="bg-black/80 text-emerald-400 p-2 rounded-xl font-mono text-[10px] dir-ltr overflow-x-auto select-all border border-slate-700">
+                    sudo mkdir -p /media/drshahidi && sudo chmod -R 777 /media/drshahidi
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText('sudo mkdir -p /media/drshahidi && sudo chmod -R 777 /media/drshahidi');
+                    setCopiedLinuxCmd(true);
+                    setTimeout(() => setCopiedLinuxCmd(false), 2000);
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  {copiedLinuxCmd ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedLinuxCmd ? 'دستور کپی شد!' : 'کپی دستورات لینوکس'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Extra tips: Nginx & API URL */}
+            <div className="p-3 bg-slate-950/60 rounded-2xl border border-slate-800 text-[11px] text-slate-400 space-y-1 leading-relaxed">
+              <p className="font-semibold text-slate-300 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>نکات مهم در صورت استفاده از Nginx یا دامنه مجزا:</span>
+              </p>
+              <ul className="list-disc list-inside space-y-0.5 pr-2">
+                <li>
+                  <strong>حجم فایل در Nginx:</strong> به طور پیش‌فرض وب‌سرور Nginx آپلود بالای ۱ مگابایت را مسدود می‌کند. در فایل کانفیگ Nginx عبارت <code className="text-teal-300 dir-ltr">client_max_body_size 50M;</code> را در بلاک <code className="dir-ltr">server</code> یا <code className="dir-ltr">http</code> قرار دهید.
+                </li>
+                <li>
+                  <strong>آدرس اتصال پنل:</strong> مطمئن شوید در تنظیمات پنل (بالای صفحه)، آدرس اتصال روی <code className="text-teal-300 dir-ltr">/api</code> قرار دارد تا درخواست‌ها به سرور خودتان ارسال شوند.
+                </li>
+              </ul>
             </div>
           </div>
 
